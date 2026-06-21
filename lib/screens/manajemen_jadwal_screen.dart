@@ -11,14 +11,78 @@ class ManajemenJadwalScreen extends StatefulWidget {
 class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   final _supabase = Supabase.instance.client;
   List<dynamic> _jadwalList = [];
+  List<String> _guruList = [];
   bool _isLoading = true;
+
+  // Daftar Pilihan Kelas Tetap
+  final List<String> _kelasList = [
+    'X TKJ',
+    'XI TKJ',
+    'XII TKJ',
+    'X RPL',
+    'XI RPL',
+    'XII RPL',
+    'X AKL',
+    'XI AKL',
+    'XII AKL',
+    'X BDP',
+    'XI BDP',
+    'XII BDP',
+    'X OTKP',
+    'XI OTKP',
+    'XII OTKP',
+  ];
+
+  // Daftar Pilihan Mata Pelajaran Tetap
+  final List<String> _mapelList = [
+    'PAI dan Budi Pekerti',
+    'PPKN',
+    'Bahasa Indonesia',
+    'Matematika',
+    'Bahasa Inggris',
+    'Sejarah',
+    'PJOK',
+    'Seni Budaya',
+    'Project IPAS',
+    'Informatika',
+    'Kejuruan TKJ',
+    'Kejuruan RPL',
+    'Kejuruan AKL',
+    'KKA (Koding dan Kecerdasan AI)',
+    'Produk Kreatif dan Kewirausahaan',
+    'Muatan Lokal',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _fetchJadwal();
+    _fetchGurus(); // Tarik data guru dari database
+    _fetchJadwal(); // Tarik data jadwal
   }
 
+  // MENGAMBIL DAFTAR GURU DARI DATABASE
+  Future<void> _fetchGurus() async {
+    try {
+      // Sesuaikan 'profiles' dengan nama tabel user/profil Anda di Supabase
+      final response = await _supabase
+          .from('profiles')
+          .select('nama')
+          .eq('role', 'Guru')
+          .order('nama', ascending: true);
+
+      if (mounted) {
+        setState(() {
+          _guruList = (response as List)
+              .map((g) => g['nama'].toString())
+              .toList();
+        });
+      }
+    } catch (e) {
+      print('Error fetch guru: $e');
+    }
+  }
+
+  // MENGAMBIL DAFTAR JADWAL
   Future<void> _fetchJadwal() async {
     setState(() => _isLoading = true);
     try {
@@ -27,35 +91,41 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
           .select()
           .order('hari')
           .order('jam_mulai');
-      setState(() {
-        _jadwalList = data;
-      });
+      if (mounted) {
+        setState(() {
+          _jadwalList = data;
+        });
+      }
     } catch (e) {
       _showSnackBar('Gagal memuat jadwal: $e', Colors.red);
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   String _formatTime(String timeDb) {
-    // Memotong format "07:45:00" dari Supabase menjadi "07:45"
     if (timeDb.length >= 5) return timeDb.substring(0, 5);
     return timeDb;
   }
 
+  // DIALOG TAMBAH / EDIT JADWAL DENGAN DROPDOWN
   void _showFormDialog({Map<String, dynamic>? jadwal}) {
     final isEdit = jadwal != null;
-    final mapelController = TextEditingController(
-      text: isEdit ? jadwal['mata_pelajaran'] : '',
-    );
-    final kelasController = TextEditingController(
-      text: isEdit ? jadwal['kelas'] : '',
-    );
-    final guruController = TextEditingController(
-      text: isEdit ? jadwal['guru_pengampu'] : '',
-    );
 
-    String selectedHari = isEdit ? jadwal['hari'] : 'Senin';
+    String? selectedHari = isEdit ? jadwal['hari'] : 'Senin';
+    String? selectedKelas = isEdit ? jadwal['kelas'] : null;
+    String? selectedMapel = isEdit ? jadwal['mata_pelajaran'] : null;
+    String? selectedGuru = isEdit ? jadwal['guru_pengampu'] : null;
+
+    // Jika data lama ada tapi tidak ada di list standar, tambahkan sementara ke list agar tidak error
+    if (isEdit) {
+      if (selectedKelas != null && !_kelasList.contains(selectedKelas))
+        _kelasList.add(selectedKelas!);
+      if (selectedMapel != null && !_mapelList.contains(selectedMapel))
+        _mapelList.add(selectedMapel!);
+      if (selectedGuru != null && !_guruList.contains(selectedGuru))
+        _guruList.add(selectedGuru!);
+    }
 
     TimeOfDay? jamMulai = isEdit && jadwal['jam_mulai'] != null
         ? TimeOfDay(
@@ -73,6 +143,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
@@ -88,6 +159,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // DROPDOWN HARI
                     DropdownButtonFormField<String>(
                       value: selectedHari,
                       items:
@@ -98,37 +170,73 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                               )
                               .toList(),
                       onChanged: (val) =>
-                          setDialogState(() => selectedHari = val!),
+                          setDialogState(() => selectedHari = val),
                       decoration: const InputDecoration(
                         labelText: 'Hari',
                         border: OutlineInputBorder(),
                       ),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: kelasController,
+
+                    // DROPDOWN KELAS
+                    DropdownButtonFormField<String>(
+                      value: selectedKelas,
+                      hint: const Text('Pilih Kelas'),
+                      items: _kelasList
+                          .map(
+                            (k) => DropdownMenuItem(value: k, child: Text(k)),
+                          )
+                          .toList(),
+                      onChanged: (val) =>
+                          setDialogState(() => selectedKelas = val),
                       decoration: const InputDecoration(
-                        labelText: 'Kelas (Cth: X RPL 1)',
+                        labelText: 'Kelas Target',
                         border: OutlineInputBorder(),
                       ),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: mapelController,
-                      decoration: const InputDecoration(
-                        labelText: 'Mata Pelajaran',
-                        border: OutlineInputBorder(),
+
+                    // DROPDOWN GURU (Dinamic dari Database)
+                    DropdownButtonFormField<String>(
+                      value: selectedGuru,
+                      hint: Text(
+                        _guruList.isEmpty
+                            ? 'Memuat guru...'
+                            : 'Pilih Guru Pengampu',
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: guruController,
+                      items: _guruList
+                          .map(
+                            (g) => DropdownMenuItem(value: g, child: Text(g)),
+                          )
+                          .toList(),
+                      onChanged: (val) =>
+                          setDialogState(() => selectedGuru = val),
                       decoration: const InputDecoration(
                         labelText: 'Guru Pengampu',
                         border: OutlineInputBorder(),
                       ),
                     ),
+                    const SizedBox(height: 12),
+
+                    // DROPDOWN MATA PELAJARAN
+                    DropdownButtonFormField<String>(
+                      value: selectedMapel,
+                      hint: const Text('Pilih Mata Pelajaran'),
+                      items: _mapelList
+                          .map(
+                            (m) => DropdownMenuItem(value: m, child: Text(m)),
+                          )
+                          .toList(),
+                      onChanged: (val) =>
+                          setDialogState(() => selectedMapel = val),
+                      decoration: const InputDecoration(
+                        labelText: 'Mata Pelajaran',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
                     const SizedBox(height: 16),
+
+                    // WAKTU MULAI & SELESAI
                     Row(
                       children: [
                         Expanded(
@@ -150,7 +258,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                             icon: const Icon(Icons.access_time),
                             label: Text(
                               jamMulai == null
-                                  ? 'Pilih Jam Mulai'
+                                  ? 'Jam Mulai'
                                   : '${jamMulai!.hour.toString().padLeft(2, '0')}:${jamMulai!.minute.toString().padLeft(2, '0')}',
                             ),
                           ),
@@ -179,7 +287,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                             icon: const Icon(Icons.access_time_filled),
                             label: Text(
                               jamSelesai == null
-                                  ? 'Pilih Jam Selesai'
+                                  ? 'Jam Selesai'
                                   : '${jamSelesai!.hour.toString().padLeft(2, '0')}:${jamSelesai!.minute.toString().padLeft(2, '0')}',
                             ),
                           ),
@@ -192,23 +300,30 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Batal'),
+                  child: const Text(
+                    'Batal',
+                    style: TextStyle(color: Colors.grey),
+                  ),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue.shade900,
                   ),
                   onPressed: () async {
-                    if (kelasController.text.isEmpty ||
-                        mapelController.text.isEmpty ||
+                    // Validasi form agar tidak ada yang kosong
+                    if (selectedHari == null ||
+                        selectedKelas == null ||
+                        selectedGuru == null ||
+                        selectedMapel == null ||
                         jamMulai == null ||
                         jamSelesai == null) {
                       _showSnackBar(
-                        'Harap lengkapi semua data, termasuk Jam Mulai dan Selesai!',
+                        'Harap pilih semua Dropdown dan Waktu!',
                         Colors.orange,
                       );
                       return;
                     }
+
                     final formatMulai =
                         '${jamMulai!.hour.toString().padLeft(2, '0')}:${jamMulai!.minute.toString().padLeft(2, '0')}:00';
                     final formatSelesai =
@@ -217,9 +332,9 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                     try {
                       final data = {
                         'hari': selectedHari,
-                        'kelas': kelasController.text,
-                        'mata_pelajaran': mapelController.text,
-                        'guru_pengampu': guruController.text,
+                        'kelas': selectedKelas,
+                        'mata_pelajaran': selectedMapel,
+                        'guru_pengampu': selectedGuru,
                         'jam_mulai': formatMulai,
                         'jam_selesai': formatSelesai,
                       };
@@ -232,9 +347,13 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                       } else {
                         await _supabase.from('jadwal').insert(data);
                       }
-                      Navigator.pop(context);
-                      _fetchJadwal();
-                      _showSnackBar('Jadwal berhasil disimpan!', Colors.green);
+
+                      Navigator.pop(context); // Tutup dialog
+                      _fetchJadwal(); // Refresh list jadwal di background
+                      _showSnackBar(
+                        'Jadwal berhasil disimpan & disinkronkan!',
+                        Colors.green,
+                      );
                     } catch (e) {
                       _showSnackBar('Error: $e', Colors.red);
                     }
@@ -263,18 +382,27 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   }
 
   void _showSnackBar(String pesan, Color warna) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(pesan), backgroundColor: warna));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(pesan),
+        backgroundColor: warna,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text(
           'Manajemen Jadwal Real-Time',
-          style: TextStyle(color: Colors.black, fontSize: 16),
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         backgroundColor: Colors.white,
         elevation: 1,
@@ -313,13 +441,13 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: Colors.blue.shade900,
-                              fontSize: 12,
+                              fontSize: 13,
                             ),
                           ),
                           Text(
                             jamSelesai,
                             style: const TextStyle(
-                              fontSize: 10,
+                              fontSize: 11,
                               color: Colors.grey,
                             ),
                           ),
@@ -328,10 +456,20 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                     ),
                     title: Text(
                       '${jadwal['mata_pelajaran']} (${jadwal['kelas']})',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
-                    subtitle: Text(
-                      '${jadwal['hari']} • Guru: ${jadwal['guru_pengampu']}',
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        '${jadwal['hari']} • Guru: ${jadwal['guru_pengampu']}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -356,7 +494,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text(
           'Tambah Jadwal',
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
       ),
     );
