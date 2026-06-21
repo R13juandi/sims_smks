@@ -14,9 +14,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   List<String> _guruList = [];
   bool _isLoading = true;
 
-  // Daftar Pilihan Kelas Tetap (Hanya TKJ)
   final List<String> _kelasList = ['X TKJ', 'XI TKJ', 'XII TKJ'];
-
   final List<String> _hariList = [
     'Senin',
     'Selasa',
@@ -28,7 +26,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
 
   // ==========================================================
   // KONFIGURASI MATA PELAJARAN SPESIFIK PER GURU
-  // Admin mendaftarkan guru dan mapel yang diajarkannya di sini
+  // Admin bisa menambahkan Guru baru & Mapelnya di sini
   // ==========================================================
   final Map<String, List<String>> _guruMapelConfig = {
     'Djuwandi': [
@@ -39,9 +37,16 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     'Iqbal': ['Kejuruan TKJ', 'Informatika', 'Project IPAS'],
     'Ahmad': ['PAI dan Budi Pekerti', 'PPKN', 'Sejarah'],
     'Rosita': ['Bahasa Inggris', 'Produk Kreatif dan Kewirausahaan'],
+    // NAMA GURU BARU (Contoh)
+    'Muhammad Rizqi': [
+      'Matematika',
+      'Informatika',
+      'Kejuruan TKJ',
+      'Project IPAS',
+    ],
   };
 
-  // Mapel Default jika Guru belum dikonfigurasi di atas
+  // Mapel Default jika Guru belum diatur di atas
   final List<String> _defaultMapelList = [
     'PAI dan Budi Pekerti',
     'PPKN',
@@ -66,28 +71,36 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     _fetchJadwal();
   }
 
-  // 1. MENGAMBIL DAFTAR GURU DARI DATABASE (Tabel Profiles)
+  // 🔥 PERBAIKAN: Menggunakan 'full_name' sesuai dengan database Supabase Anda
   Future<void> _fetchGurus() async {
     try {
       final response = await _supabase
           .from('profiles')
-          .select('nama')
-          .eq('role', 'Guru')
-          .order('nama', ascending: true);
+          .select('full_name, role');
+
+      List<String> daftarGuru = [];
+      for (var user in response) {
+        if (user['role'] != null &&
+            user['role'].toString().toLowerCase() == 'guru') {
+          if (user['full_name'] != null) {
+            daftarGuru.add(user['full_name'].toString());
+          }
+        }
+      }
+
+      daftarGuru.sort((a, b) => a.compareTo(b));
 
       if (mounted) {
         setState(() {
-          _guruList = (response as List)
-              .map((g) => g['nama'].toString())
-              .toList();
+          _guruList = daftarGuru;
         });
       }
     } catch (e) {
       print('Error fetch guru: $e');
+      _showSnackBar('Gagal memuat daftar guru', Colors.red);
     }
   }
 
-  // 2. MENGAMBIL DAFTAR JADWAL DARI DATABASE
   Future<void> _fetchJadwal() async {
     setState(() => _isLoading = true);
     try {
@@ -95,11 +108,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
           .from('jadwal')
           .select()
           .order('jam_mulai', ascending: true);
-      if (mounted) {
-        setState(() {
-          _jadwalList = data;
-        });
-      }
+      if (mounted) setState(() => _jadwalList = data);
     } catch (e) {
       _showSnackBar('Gagal memuat jadwal: $e', Colors.red);
     } finally {
@@ -112,7 +121,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     return timeDb;
   }
 
-  // 3. DIALOG TAMBAH / EDIT JADWAL DENGAN LOGIKA DROPDOWN BERSYARAT
   void _showFormDialog({Map<String, dynamic>? jadwal}) {
     final isEdit = jadwal != null;
 
@@ -121,13 +129,11 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     String? selectedGuru = isEdit ? jadwal['guru_pengampu'] : null;
     String? selectedMapel = isEdit ? jadwal['mata_pelajaran'] : null;
 
-    // Tentukan list mapel awal saat dialog dibuka (terutama untuk mode edit)
     List<String> currentMapelList = [];
     if (selectedGuru != null) {
       currentMapelList = _guruMapelConfig[selectedGuru] ?? _defaultMapelList;
     }
 
-    // Pastikan data lama tetap terbaca di dropdown meskipun tidak ada di list
     if (isEdit) {
       if (selectedKelas != null && !_kelasList.contains(selectedKelas))
         _kelasList.add(selectedKelas!);
@@ -169,7 +175,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // DROPDOWN HARI
                     DropdownButtonFormField<String>(
                       value: selectedHari,
                       hint: const Text('Pilih Hari'),
@@ -187,12 +192,11 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // DROPDOWN GURU
                     DropdownButtonFormField<String>(
                       value: selectedGuru,
                       hint: Text(
                         _guruList.isEmpty
-                            ? 'Memuat guru...'
+                            ? 'Tidak ada data guru'
                             : 'Pilih Guru Pengampu',
                       ),
                       items: _guruList
@@ -203,9 +207,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                       onChanged: (val) {
                         setDialogState(() {
                           selectedGuru = val;
-                          selectedMapel =
-                              null; // Reset pilihan mapel saat guru diubah
-                          // Tampilkan hanya mapel yang diajarkan oleh guru tersebut
+                          selectedMapel = null;
                           if (val != null &&
                               _guruMapelConfig.containsKey(val)) {
                             currentMapelList = List.from(
@@ -223,10 +225,9 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // DROPDOWN KELAS
                     DropdownButtonFormField<String>(
                       value: selectedKelas,
-                      hint: const Text('Pilih Kelas'),
+                      hint: const Text('Pilih Kelas Target'),
                       items: _kelasList
                           .map(
                             (k) => DropdownMenuItem(value: k, child: Text(k)),
@@ -241,15 +242,13 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // DROPDOWN MATA PELAJARAN (Terkunci jika belum pilih Guru)
                     DropdownButtonFormField<String>(
                       value: selectedMapel,
                       hint: Text(
                         selectedGuru == null
-                            ? 'Pilih Guru terlebih dahulu'
+                            ? 'Pilih Guru Terlebih Dahulu'
                             : 'Pilih Mata Pelajaran',
                       ),
-                      // Matikan (disable) dropdown jika guru belum dipilih
                       items: selectedGuru == null
                           ? null
                           : currentMapelList
@@ -267,12 +266,13 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                         labelText: 'Mata Pelajaran',
                         border: const OutlineInputBorder(),
                         filled: selectedGuru == null,
-                        fillColor: Colors.grey.shade200,
+                        fillColor: selectedGuru == null
+                            ? Colors.grey.shade200
+                            : Colors.white,
                       ),
                     ),
                     const SizedBox(height: 16),
 
-                    // WAKTU MULAI & SELESAI
                     Row(
                       children: [
                         Expanded(
@@ -426,9 +426,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     );
   }
 
-  // ==========================================================
-  // FUNGSI MEMBANGUN TAMPILAN FOLDER KELAS -> HARI -> JADWAL
-  // ==========================================================
   Widget _buildGroupedJadwalView() {
     if (_jadwalList.isEmpty) {
       return const Center(child: Text('Belum ada jadwal yang ditambahkan.'));
@@ -439,13 +436,10 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
       itemCount: _kelasList.length,
       itemBuilder: (context, index) {
         String kelasTujuan = _kelasList[index];
-
-        // Ambil semua jadwal yang sesuai dengan kelas ini
         List<dynamic> jadwalKelasIni = _jadwalList
             .where((j) => j['kelas'] == kelasTujuan)
             .toList();
 
-        // Jika kelas ini tidak punya jadwal sama sekali, sembunyikan foldernya
         if (jadwalKelasIni.isEmpty) return const SizedBox.shrink();
 
         return Card(
@@ -469,12 +463,9 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
               size: 32,
             ),
             children: _hariList.map((hariTujuan) {
-              // Ambil jadwal di kelas ini untuk hari tertentu
               List<dynamic> jadwalHariIni = jadwalKelasIni
                   .where((j) => j['hari'] == hariTujuan)
                   .toList();
-
-              // Sembunyikan hari jika tidak ada jadwal (Misal: Hari Minggu)
               if (jadwalHariIni.isEmpty) return const SizedBox.shrink();
 
               return ExpansionTile(
@@ -595,7 +586,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _buildGroupedJadwalView(), // Tampilkan UI Folder
+          : _buildGroupedJadwalView(),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: Colors.blue.shade900,
         onPressed: () => _showFormDialog(),
