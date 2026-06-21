@@ -39,7 +39,7 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
   List<String> _selectedMapelGuru = [];
   List<String> _selectedKelasGuru = [];
 
-  // 🔥 PERBAIKAN: Hanya TKJ & Hilangkan tanda titik di sebelah Romawi
+  // PERBAIKAN: Hanya TKJ & Hilangkan tanda titik di sebelah Romawi
   final List<String> _daftarKelas = ['X TKJ', 'XI TKJ', 'XII TKJ'];
   final List<String> _daftarAgama = [
     'Islam',
@@ -79,24 +79,42 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
           .select('nama_mapel')
           .order('nama_mapel', ascending: true);
 
-      setState(() {
-        _daftarMapelDinamis = List<String>.from(
-          res.map((m) => m['nama_mapel']),
-        );
-      });
+      // JIKA TABEL DI DATABASE KOSONG, GUNAKAN DAFTAR DEFAULT
+      if (res.isEmpty) {
+        _gunakanMapelDefault();
+      } else {
+        setState(() {
+          _daftarMapelDinamis = List<String>.from(
+            res.map((m) => m['nama_mapel']),
+          );
+        });
+      }
     } catch (e) {
-      // Fallback data dari Excel jika server sibuk
-      setState(() {
-        _daftarMapelDinamis = [
-          'Administrasi Infrastruktur Jaringan',
-          'Administrasi Sistem Jaringan',
-          'BAHASA INDONESIA',
-          'BAHASA INGGRIS',
-          'MATEMATIKA',
-          'Pemrograman Dasar',
-        ];
-      });
+      // JIKA KONEKSI ERROR, GUNAKAN DAFTAR DEFAULT
+      _gunakanMapelDefault();
     }
+  }
+
+  // FUNGSI BARU: Daftar Mapel Default (Sudah dirapikan khusus TKJ)
+  void _gunakanMapelDefault() {
+    setState(() {
+      _daftarMapelDinamis = [
+        'PAI dan Budi Pekerti',
+        'PPKN',
+        'Bahasa Indonesia',
+        'Matematika',
+        'Bahasa Inggris',
+        'Sejarah',
+        'PJOK',
+        'Seni Budaya',
+        'Project IPAS',
+        'Informatika',
+        'Kejuruan TKJ',
+        'KKA (Koding dan Kecerdasan AI)',
+        'Produk Kreatif dan Kewirausahaan',
+        'Muatan Lokal',
+      ];
+    });
   }
 
   // Pop-up Centang Banyak Mapel
@@ -148,7 +166,7 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
     );
   }
 
-  // Pop-up Centang Banyak Kelas (Menggunakan list TKJ baru tanpa titik)
+  // Pop-up Centang Banyak Kelas
   void _showMultiSelectKelas() async {
     await showDialog(
       context: context,
@@ -228,24 +246,28 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
       final String? newUserId = authRes.user?.id;
 
       if (newUserId != null) {
-        // 🔥 INI DIA KUNCINYA: Tambahkan email dan status_aktif ke tabel profiles
+        // 🔥 PERBAIKAN: KEMBALIKAN KE full_name
         Map<String, dynamic> profileData = {
           'id': newUserId,
           'full_name': _namaController.text.trim(),
           'role': _selectedRole,
-          'email': _emailController.text.trim(), // Pastikan email masuk
-          'status_aktif': true, // Pastikan langsung aktif
+          'email': _emailController.text.trim(),
+          'status_aktif': true,
           'nomor_hp': _hpController.text.trim(),
           'alamat': _alamatController.text.trim(),
           'agama': _selectedAgama,
           'jenis_kelamin': _selectedJK,
         };
 
+        // KONDISI JIKA GURU
         if (_selectedRole == 'guru') {
           profileData['mapel'] = _selectedMapelGuru;
           profileData['kelas_mengajar'] = _selectedKelasGuru;
+          // PASTIKAN NIK GURU DISIMPAN
+          profileData['nik'] = _nikController.text.trim();
         }
 
+        // KONDISI JIKA SISWA
         if (_selectedRole == 'siswa') {
           profileData.addAll({
             'kelas': _selectedKelasSiswa,
@@ -309,7 +331,6 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 🔥 PERBAIKAN: Hanya menyisakan peran Siswa dan Guru (Pilihan Admin Dihapus)
                     const Text(
                       'PILIH PERAN AKUN / ROLE',
                       style: TextStyle(
@@ -396,8 +417,10 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                       maxLines: 2,
                     ),
                     const SizedBox(height: 12),
+
+                    // NIK SEKARANG BISA DIISI OLEH GURU DAN SISWA
                     _buildTextField(
-                      'NIK',
+                      'NIK (Nomor Induk Kependudukan)',
                       _nikController,
                       TextInputType.number,
                       Icons.credit_card_rounded,
@@ -486,6 +509,13 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                     if (_selectedRole == 'siswa') ...[
                       const SizedBox(height: 12),
                       _buildTextField(
+                        'Tempat Lahir',
+                        _tempatLahirController,
+                        TextInputType.text,
+                        Icons.location_city_rounded,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildTextField(
                         'NIPD',
                         _nipdController,
                         TextInputType.number,
@@ -499,7 +529,6 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                         Icons.fingerprint_rounded,
                       ),
                       const SizedBox(height: 12),
-                      // 🔥 PERBAIKAN: Menggunakan default value X TKJ tanpa titik
                       _buildDropdownField(
                         'Kelas Aktif',
                         _selectedKelasSiswa ?? 'X TKJ',
@@ -577,7 +606,6 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
     List<String> items,
     ValueChanged<String?> onChanged,
   ) {
-    // Validasi agar jika state value lama tidak ada di list baru, dropdown tidak crash
     final String verifiedValue = items.contains(value) ? value : items.first;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
