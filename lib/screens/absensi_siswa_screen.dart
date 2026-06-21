@@ -24,14 +24,23 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
 
   String _tipeAbsen = 'Masuk'; // Default opsi absen
 
-  // DAFTAR LOKASI YANG DIIZINKAN UNTUK ABSEN
-  final double _toleransiMeter = 150.0;
+  // ==========================================
+  // VALIDASI LAPIS 1: GEOFENCING (LOKASI)
+  // Diubah ke 50.0 Meter sesuai instruksi Dosen
+  // ==========================================
+  final double _toleransiMeter = 50.0;
   final List<Map<String, dynamic>> _lokasiDiizinkan = [
     {'nama': 'Rumah Tomang', 'lat': -6.1595261, 'lng': 106.5820671},
     {'nama': 'Kampus Bina Sarana Global', 'lat': -6.179190, 'lng': 106.608069},
     {'nama': 'SMK Islam YIA', 'lat': -6.161616, 'lng': 106.675552},
     {'nama': 'Rumah Rajeg', 'lat': -6.116251, 'lng': 106.506694},
   ];
+
+  // ==========================================
+  // VALIDASI LAPIS 2: JADWAL & WAKTU (BARU)
+  // ==========================================
+  bool _isWaktuValid = false;
+  String _pesanValidasiWaktu = "Memeriksa jadwal...";
 
   final FaceDetector _faceDetector = FaceDetector(
     options: FaceDetectorOptions(
@@ -102,9 +111,41 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
           _jadwalHariIni = List<Map<String, dynamic>>.from(jadwalRes);
           _isLoading = false;
         });
+
+        // Panggil validasi waktu setelah data jadwal berhasil didapatkan
+        _validasiJadwalDanWaktu();
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // FUNGSI BARU: Memvalidasi Jam Operasional Sekolah
+  void _validasiJadwalDanWaktu() {
+    DateTime now = DateTime.now();
+    int menitSekarang = (now.hour * 60) + now.minute;
+
+    // Konfigurasi Jam Operasional (06:00 Pagi s/d 15:00 Sore)
+    int batasMulai = (6 * 60) + 0;
+    int batasSelesai = (15 * 60) + 0;
+
+    if (_jadwalHariIni.isEmpty) {
+      setState(() {
+        _isWaktuValid = false;
+        _pesanValidasiWaktu =
+            "Tombol Terkunci: Hari ini tidak ada jadwal pelajaran Anda.";
+      });
+    } else if (menitSekarang < batasMulai || menitSekarang > batasSelesai) {
+      setState(() {
+        _isWaktuValid = false;
+        _pesanValidasiWaktu =
+            "Tombol Terkunci: Di luar jam operasional sekolah (06:00 - 15:00).";
+      });
+    } else {
+      setState(() {
+        _isWaktuValid = true;
+        _pesanValidasiWaktu = "Waktu valid. Silakan lakukan absensi.";
+      });
     }
   }
 
@@ -228,7 +269,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
 
     try {
       // ==========================================
-      // 1. GEOFENCING
+      // 1. GEOFENCING LOKASI (Algoritma Haversine)
       // ==========================================
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -268,7 +309,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         throw 'Absen Ditolak!\nAnda berada di luar area. Jarak Anda ${jarakTerdekat.toInt()} meter dari lokasi terdekat ($namaLokasiTerdekat). Maksimal $_toleransiMeter m.';
 
       // ==========================================
-      // 2. VALIDASI WAKTU
+      // VALIDASI KETERLAMBATAN
       // ==========================================
       final String jamMulaiStr = _selectedJadwal!['jam_mulai'] ?? "07:00";
       final List<String> waktuSplit = jamMulaiStr.split(':');
@@ -298,10 +339,9 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       }
 
       // ==========================================
-      // 3. SCAN WAJAH (ANTI-CHEAT)
+      // 3. SCAN WAJAH (Algoritma CNN via ML Kit)
       // ==========================================
       final ImagePicker picker = ImagePicker();
-      // Kualitas gambar diturunkan jadi 30 agar proses upload sangat cepat & ringan di database
       final XFile? foto = await picker.pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.front,
@@ -355,12 +395,10 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
           '${user!.id}_${DateTime.now().millisecondsSinceEpoch}.$ekstensiFile';
       final fileFoto = File(foto.path);
 
-      // Mengunggah gambar ke bucket 'foto_absensi'
       await _supabase.storage
           .from('foto_absensi')
           .upload(namaFileUnik, fileFoto);
 
-      // Mengambil URL Publik dari foto yang berhasil diupload
       final String linkFotoPublik = _supabase.storage
           .from('foto_absensi')
           .getPublicUrl(namaFileUnik);
@@ -383,7 +421,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         'guru_pengampu': _selectedJadwal!['guru_pengampu'] ?? 'Sistem Otomatis',
         'lat': posisiSekarang.latitude,
         'lng': posisiSekarang.longitude,
-        'foto_url': linkFotoPublik, // 🔥 Menyimpan Link Foto ke dalam tabel!
+        'foto_url': linkFotoPublik,
       }, onConflict: 'siswa_id, tanggal, mapel');
 
       if (!mounted) return;
@@ -647,13 +685,33 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
 
                 const SizedBox(height: 40),
 
+                // NOTIFIKASI JIKA WAKTU TIDAK VALID
+                if (!_isWaktuValid && _tipeAbsen != 'Izin / Sakit')
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      _pesanValidasiWaktu,
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+
+                // TOMBOL ABSEN YANG DIKUNCI SESUAI WAKTU
                 _isProcessingAbsen
                     ? const Center(child: CircularProgressIndicator())
                     : ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _tipeAbsen == 'Izin / Sakit'
-                              ? Colors.orange.shade700
-                              : Colors.blue[900],
+                          backgroundColor:
+                              (!_isWaktuValid && _tipeAbsen != 'Izin / Sakit')
+                              ? Colors
+                                    .grey // Warna abu-abu jika terkunci
+                              : (_tipeAbsen == 'Izin / Sakit'
+                                    ? Colors.orange.shade700
+                                    : Colors.blue[900]),
                           foregroundColor: Colors.white,
                           minimumSize: const Size(double.infinity, 60),
                           shape: RoundedRectangleBorder(
@@ -661,7 +719,11 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                           ),
                           elevation: 3,
                         ),
-                        onPressed: _prosesAbsenLengkap,
+                        // Logika penguncian tombol ada di sini
+                        onPressed:
+                            (!_isWaktuValid && _tipeAbsen != 'Izin / Sakit')
+                            ? null
+                            : _prosesAbsenLengkap,
                         icon: Icon(
                           _tipeAbsen == 'Izin / Sakit'
                               ? Icons.edit_document
