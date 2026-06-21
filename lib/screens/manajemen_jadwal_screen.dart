@@ -10,425 +10,355 @@ class ManajemenJadwalScreen extends StatefulWidget {
 
 class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   final _supabase = Supabase.instance.client;
-  final _formKey = GlobalKey<FormState>();
-  bool _isLoading = false;
+  List<dynamic> _jadwalList = [];
+  bool _isLoading = true;
 
-  String? _selectedHari, _selectedKelas, _selectedGuru, _selectedMapel;
-  Map<String, String>? _selectedSesi;
+  @override
+  void initState() {
+    super.initState();
+    _fetchJadwal();
+  }
 
-  final List<String> _listHari = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
-  final List<String> _listKelas = ['X TKJ', 'XI TKJ', 'XII TKJ'];
-
-  // DATA JAM PELAJARAN OTOMATIS (Dari Excel Sekolah)
-  final List<Map<String, String>> _listSesiPelajaran = [
-    {
-      'nama': 'Jam ke-1 (07:30 - 08:00)',
-      'mulai': '07:30:00',
-      'selesai': '08:00:00',
-    },
-    {
-      'nama': 'Jam ke-2 (08:00 - 08:30)',
-      'mulai': '08:00:00',
-      'selesai': '08:30:00',
-    },
-    {
-      'nama': 'Jam ke-3 (08:30 - 09:00)',
-      'mulai': '08:30:00',
-      'selesai': '09:00:00',
-    },
-    {
-      'nama': 'Jam ke-4 (09:00 - 09:30)',
-      'mulai': '09:00:00',
-      'selesai': '09:30:00',
-    },
-    {
-      'nama': 'Jam ke-5 (09:30 - 10:00)',
-      'mulai': '09:30:00',
-      'selesai': '10:00:00',
-    },
-    {
-      'nama': 'Jam ke-6 (10:30 - 11:00)',
-      'mulai': '10:30:00',
-      'selesai': '11:00:00',
-    },
-    {
-      'nama': 'Jam ke-7 (11:00 - 11:30)',
-      'mulai': '11:00:00',
-      'selesai': '11:30:00',
-    },
-    {
-      'nama': 'Jam ke-8 (11:30 - 12:00)',
-      'mulai': '11:30:00',
-      'selesai': '12:00:00',
-    },
-    {
-      'nama': 'Jam ke-9 (12:45 - 13:10)',
-      'mulai': '12:45:00',
-      'selesai': '13:10:00',
-    },
-    {
-      'nama': 'Jam ke-10 (13:10 - 13:35)',
-      'mulai': '13:10:00',
-      'selesai': '13:35:00',
-    },
-  ];
-
-  List<String> _listGuruTerfilter = [];
-  List<dynamic> _dataGuruLengkap = [];
-  List<String> _mapelGuruTerfilter = [];
-
-  Future<void> _autoFillGuruDanMapel(String kelasTerpilih) async {
+  Future<void> _fetchJadwal() async {
     setState(() => _isLoading = true);
     try {
-      final res = await _supabase
-          .from('profiles')
-          .select('full_name, mapel, kelas_mengajar, email')
-          .eq('role', 'guru');
-      String kS = kelasTerpilih
-          .replaceAll('.', '')
-          .replaceAll(' ', '')
-          .toUpperCase();
-
-      List<String> gD = [];
-      List<dynamic> dD = [];
-
-      for (var guru in res) {
-        List<dynamic> kelasArray = guru['kelas_mengajar'] ?? [];
-        for (var k in kelasArray) {
-          if (k
-                  .toString()
-                  .replaceAll('.', '')
-                  .replaceAll(' ', '')
-                  .toUpperCase() ==
-              kS) {
-            if (!gD.contains(guru['full_name'])) {
-              gD.add(guru['full_name']);
-              dD.add(guru);
-            }
-            break;
-          }
-        }
-      }
-
+      final data = await _supabase
+          .from('jadwal')
+          .select()
+          .order('hari')
+          .order('jam_mulai');
       setState(() {
-        _listGuruTerfilter = gD;
-        _dataGuruLengkap = dD;
-        _selectedGuru = null;
-        _selectedMapel = null;
-        _selectedHari = null;
-        _mapelGuruTerfilter = [];
+        _jadwalList = data;
       });
     } catch (e) {
-      debugPrint('Error: $e');
+      _showSnackBar('Gagal memuat jadwal: $e', Colors.red);
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
-  void _onGuruDipilih(String? namaGuru) {
-    if (namaGuru == null) return;
-    setState(() {
-      _selectedGuru = namaGuru;
-      _selectedMapel = null;
-      final guruData = _dataGuruLengkap.firstWhere(
-        (g) => g['full_name'] == namaGuru,
-        orElse: () => null,
-      );
-
-      if (guruData != null) {
-        _mapelGuruTerfilter = List<String>.from(guruData['mapel'] ?? []);
-        String emailGuru = (guruData['email'] ?? '')
-            .toString()
-            .toLowerCase()
-            .trim();
-
-        // HARI OTOMATIS BERDASARKAN EMAIL GURU
-        if (emailGuru == 'guru1@sekolah.com')
-          _selectedHari = 'Senin';
-        else if (emailGuru == 'guru2@sekolah.com')
-          _selectedHari = 'Selasa';
-        else if (emailGuru == 'guru3@sekolah.com')
-          _selectedHari = 'Rabu';
-        else if (emailGuru == 'rizkyjuandi3@gmail.com')
-          _selectedHari = 'Kamis';
-        else if (emailGuru == 'guru4@sekolah.com')
-          _selectedHari = 'Jumat';
-        else
-          _selectedHari = null;
-      } else {
-        _mapelGuruTerfilter = [];
-        _selectedHari = null;
-      }
-    });
+  String _formatTime(String timeDb) {
+    // Memotong format "07:45:00" dari Supabase menjadi "07:45"
+    if (timeDb.length >= 5) return timeDb.substring(0, 5);
+    return timeDb;
   }
 
-  Future<void> _simpanJadwal() async {
-    if (_selectedHari == null ||
-        _selectedKelas == null ||
-        _selectedGuru == null ||
-        _selectedMapel == null ||
-        _selectedSesi == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Lengkapi semua data!'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
+  void _showFormDialog({Map<String, dynamic>? jadwal}) {
+    final isEdit = jadwal != null;
+    final mapelController = TextEditingController(
+      text: isEdit ? jadwal['mata_pelajaran'] : '',
+    );
+    final kelasController = TextEditingController(
+      text: isEdit ? jadwal['kelas'] : '',
+    );
+    final guruController = TextEditingController(
+      text: isEdit ? jadwal['guru_pengampu'] : '',
+    );
 
-    setState(() => _isLoading = true);
+    String selectedHari = isEdit ? jadwal['hari'] : 'Senin';
+
+    TimeOfDay? jamMulai = isEdit && jadwal['jam_mulai'] != null
+        ? TimeOfDay(
+            hour: int.parse(jadwal['jam_mulai'].split(':')[0]),
+            minute: int.parse(jadwal['jam_mulai'].split(':')[1]),
+          )
+        : null;
+
+    TimeOfDay? jamSelesai = isEdit && jadwal['jam_selesai'] != null
+        ? TimeOfDay(
+            hour: int.parse(jadwal['jam_selesai'].split(':')[0]),
+            minute: int.parse(jadwal['jam_selesai'].split(':')[1]),
+          )
+        : null;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Text(
+                isEdit ? 'Edit Jadwal' : 'Tambah Jadwal',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: selectedHari,
+                      items:
+                          ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']
+                              .map(
+                                (h) =>
+                                    DropdownMenuItem(value: h, child: Text(h)),
+                              )
+                              .toList(),
+                      onChanged: (val) =>
+                          setDialogState(() => selectedHari = val!),
+                      decoration: const InputDecoration(
+                        labelText: 'Hari',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: kelasController,
+                      decoration: const InputDecoration(
+                        labelText: 'Kelas (Cth: X RPL 1)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: mapelController,
+                      decoration: const InputDecoration(
+                        labelText: 'Mata Pelajaran',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: guruController,
+                      decoration: const InputDecoration(
+                        labelText: 'Guru Pengampu',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue.shade50,
+                              foregroundColor: Colors.blue.shade900,
+                            ),
+                            onPressed: () async {
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime:
+                                    jamMulai ??
+                                    const TimeOfDay(hour: 7, minute: 0),
+                              );
+                              if (time != null)
+                                setDialogState(() => jamMulai = time);
+                            },
+                            icon: const Icon(Icons.access_time),
+                            label: Text(
+                              jamMulai == null
+                                  ? 'Pilih Jam Mulai'
+                                  : '${jamMulai!.hour.toString().padLeft(2, '0')}:${jamMulai!.minute.toString().padLeft(2, '0')}',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange.shade50,
+                              foregroundColor: Colors.orange.shade900,
+                            ),
+                            onPressed: () async {
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime:
+                                    jamSelesai ??
+                                    const TimeOfDay(hour: 8, minute: 30),
+                              );
+                              if (time != null)
+                                setDialogState(() => jamSelesai = time);
+                            },
+                            icon: const Icon(Icons.access_time_filled),
+                            label: Text(
+                              jamSelesai == null
+                                  ? 'Pilih Jam Selesai'
+                                  : '${jamSelesai!.hour.toString().padLeft(2, '0')}:${jamSelesai!.minute.toString().padLeft(2, '0')}',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Batal'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade900,
+                  ),
+                  onPressed: () async {
+                    if (kelasController.text.isEmpty ||
+                        mapelController.text.isEmpty ||
+                        jamMulai == null ||
+                        jamSelesai == null) {
+                      _showSnackBar(
+                        'Harap lengkapi semua data, termasuk Jam Mulai dan Selesai!',
+                        Colors.orange,
+                      );
+                      return;
+                    }
+                    final formatMulai =
+                        '${jamMulai!.hour.toString().padLeft(2, '0')}:${jamMulai!.minute.toString().padLeft(2, '0')}:00';
+                    final formatSelesai =
+                        '${jamSelesai!.hour.toString().padLeft(2, '0')}:${jamSelesai!.minute.toString().padLeft(2, '0')}:00';
+
+                    try {
+                      final data = {
+                        'hari': selectedHari,
+                        'kelas': kelasController.text,
+                        'mata_pelajaran': mapelController.text,
+                        'guru_pengampu': guruController.text,
+                        'jam_mulai': formatMulai,
+                        'jam_selesai': formatSelesai,
+                      };
+
+                      if (isEdit) {
+                        await _supabase
+                            .from('jadwal')
+                            .update(data)
+                            .eq('id', jadwal['id']);
+                      } else {
+                        await _supabase.from('jadwal').insert(data);
+                      }
+                      Navigator.pop(context);
+                      _fetchJadwal();
+                      _showSnackBar('Jadwal berhasil disimpan!', Colors.green);
+                    } catch (e) {
+                      _showSnackBar('Error: $e', Colors.red);
+                    }
+                  },
+                  child: const Text(
+                    'Simpan Jadwal',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _hapusJadwal(int id) async {
     try {
-      await _supabase.from('jadwal').insert({
-        'hari': _selectedHari,
-        'kelas': _selectedKelas,
-        'mata_pelajaran': _selectedMapel!.trim(),
-        'guru_pengampu': _selectedGuru,
-        'sesi': _selectedSesi!['nama'],
-        'jam_mulai': _selectedSesi!['mulai'],
-        'jam_selesai': _selectedSesi!['selesai'],
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Jadwal Berhasil Diterbitkan!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      setState(() {
-        _selectedHari = null;
-        _selectedKelas = null;
-        _selectedGuru = null;
-        _selectedMapel = null;
-        _selectedSesi = null;
-        _listGuruTerfilter = [];
-        _mapelGuruTerfilter = [];
-      });
+      await _supabase.from('jadwal').delete().eq('id', id);
+      _fetchJadwal();
+      _showSnackBar('Jadwal berhasil dihapus', Colors.green);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      _showSnackBar('Gagal menghapus: $e', Colors.red);
     }
+  }
+
+  void _showSnackBar(String pesan, Color warna) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(pesan), backgroundColor: warna));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text(
-          'Buat Jadwal Pelajaran',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-            color: Color(0xFF0F172A),
-          ),
+          'Manajemen Jadwal Real-Time',
+          style: TextStyle(color: Colors.black, fontSize: 16),
         ),
         backgroundColor: Colors.white,
-        elevation: 0,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFF1E40AF)),
-            )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(20),
+          ? const Center(child: CircularProgressIndicator())
+          : _jadwalList.isEmpty
+          ? const Center(child: Text('Belum ada jadwal yang ditambahkan.'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _jadwalList.length,
+              itemBuilder: (context, index) {
+                final jadwal = _jadwalList[index];
+                final jamMulai = _formatTime(jadwal['jam_mulai'] ?? '');
+                final jamSelesai = _formatTime(jadwal['jam_selesai'] ?? '');
+
+                return Card(
+                  elevation: 2,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFFF1F5F9)),
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text(
-                            'FORMULIR PENYUSUNAN JADWAL SMART',
+                          Text(
+                            jamMulai,
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: Color(0xFF1E40AF),
+                              color: Colors.blue.shade900,
+                              fontSize: 12,
                             ),
                           ),
-                          const Divider(height: 24),
-                          _buildLabel('1. Tentukan Kelas Target'),
-                          DropdownButtonFormField<String>(
-                            value: _selectedKelas,
-                            hint: const Text('Pilih Kelas'),
-                            decoration: InputDecoration(
-                              fillColor: const Color(0xFFF8FAFC),
-                              filled: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                          Text(
+                            jamSelesai,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey,
                             ),
-                            items: _listKelas
-                                .map(
-                                  (k) => DropdownMenuItem(
-                                    value: k,
-                                    child: Text(k),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (val) {
-                              setState(() => _selectedKelas = val);
-                              if (val != null) _autoFillGuruDanMapel(val);
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          _buildLabel('2. Pilih Guru Pengampu'),
-                          DropdownButtonFormField<String>(
-                            value: _selectedGuru,
-                            hint: Text(
-                              _listGuruTerfilter.isEmpty
-                                  ? 'Pilih kelas dahulu'
-                                  : 'Pilih Guru',
-                            ),
-                            decoration: InputDecoration(
-                              fillColor: const Color(0xFFF8FAFC),
-                              filled: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            items: _listGuruTerfilter
-                                .map(
-                                  (g) => DropdownMenuItem(
-                                    value: g,
-                                    child: Text(g),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: _listGuruTerfilter.isEmpty
-                                ? null
-                                : _onGuruDipilih,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildLabel('3. Pilih Mata Pelajaran'),
-                          DropdownButtonFormField<String>(
-                            value: _selectedMapel,
-                            hint: Text(
-                              _mapelGuruTerfilter.isEmpty
-                                  ? 'Pilih guru dahulu'
-                                  : 'Pilih Mapel',
-                            ),
-                            decoration: InputDecoration(
-                              fillColor: const Color(0xFFF8FAFC),
-                              filled: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            items: _mapelGuruTerfilter
-                                .map(
-                                  (m) => DropdownMenuItem(
-                                    value: m,
-                                    child: Text(m),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: _mapelGuruTerfilter.isEmpty
-                                ? null
-                                : (val) => setState(() => _selectedMapel = val),
-                          ),
-                          const SizedBox(height: 16),
-                          _buildLabel('4. Hari Belajar (Otomatis/Manual)'),
-                          DropdownButtonFormField<String>(
-                            value: _listHari.contains(_selectedHari)
-                                ? _selectedHari
-                                : null,
-                            hint: const Text('Pilih Hari'),
-                            decoration: InputDecoration(
-                              fillColor: const Color(0xFFF8FAFC),
-                              filled: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            items: _listHari
-                                .map(
-                                  (h) => DropdownMenuItem(
-                                    value: h,
-                                    child: Text(h),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (val) =>
-                                setState(() => _selectedHari = val),
-                          ),
-                          const SizedBox(height: 16),
-                          _buildLabel('5. Sesi Jam Pelajaran (Otomatis)'),
-                          DropdownButtonFormField<Map<String, String>>(
-                            value: _selectedSesi,
-                            hint: const Text('Pilih Jam Pelajaran'),
-                            decoration: InputDecoration(
-                              fillColor: const Color(0xFFF8FAFC),
-                              filled: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            items: _listSesiPelajaran
-                                .map(
-                                  (sesi) =>
-                                      DropdownMenuItem<Map<String, String>>(
-                                        value: sesi,
-                                        child: Text(
-                                          sesi['nama']!,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                      ),
-                                )
-                                .toList(),
-                            onChanged: (val) =>
-                                setState(() => _selectedSesi = val),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1E40AF),
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(double.infinity, 54),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      onPressed: _simpanJadwal,
-                      icon: const Icon(Icons.verified_user_rounded, size: 18),
-                      label: const Text(
-                        'PUBLIKASIKAN JADWAL',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                    title: Text(
+                      '${jadwal['mata_pelajaran']} (${jadwal['kelas']})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                  ],
-                ),
-              ),
+                    subtitle: Text(
+                      '${jadwal['hari']} • Guru: ${jadwal['guru_pengampu']}',
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.orange),
+                          onPressed: () => _showFormDialog(jadwal: jadwal),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => _hapusJadwal(jadwal['id']),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: Colors.blue.shade900,
+        onPressed: () => _showFormDialog(),
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text(
+          'Tambah Jadwal',
+          style: TextStyle(color: Colors.white),
+        ),
+      ),
     );
   }
-
-  Widget _buildLabel(String label) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
-    child: Text(
-      label,
-      style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        color: Color(0xFF64748B),
-      ),
-    ),
-  );
 }
