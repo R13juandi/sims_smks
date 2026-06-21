@@ -14,26 +14,10 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   List<String> _guruList = [];
   bool _isLoading = true;
 
-  // Daftar Pilihan Kelas Tetap
-  final List<String> _kelasList = [
-    'X TKJ',
-    'XI TKJ',
-    'XII TKJ',
-    'X RPL',
-    'XI RPL',
-    'XII RPL',
-    'X AKL',
-    'XI AKL',
-    'XII AKL',
-    'X BDP',
-    'XI BDP',
-    'XII BDP',
-    'X OTKP',
-    'XI OTKP',
-    'XII OTKP',
-  ];
+  // Daftar Pilihan Kelas Tetap (Hanya TKJ)
+  final List<String> _kelasList = ['X TKJ', 'XI TKJ', 'XII TKJ'];
 
-  // Daftar Pilihan Mata Pelajaran Tetap
+  // Daftar Pilihan Mata Pelajaran Tetap (Disesuaikan untuk TKJ)
   final List<String> _mapelList = [
     'PAI dan Budi Pekerti',
     'PPKN',
@@ -46,8 +30,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     'Project IPAS',
     'Informatika',
     'Kejuruan TKJ',
-    'Kejuruan RPL',
-    'Kejuruan AKL',
     'KKA (Koding dan Kecerdasan AI)',
     'Produk Kreatif dan Kewirausahaan',
     'Muatan Lokal',
@@ -56,14 +38,13 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchGurus(); // Tarik data guru dari database
-    _fetchJadwal(); // Tarik data jadwal
+    _fetchGurus();
+    _fetchJadwal();
   }
 
   // MENGAMBIL DAFTAR GURU DARI DATABASE
   Future<void> _fetchGurus() async {
     try {
-      // Sesuaikan 'profiles' dengan nama tabel user/profil Anda di Supabase
       final response = await _supabase
           .from('profiles')
           .select('nama')
@@ -117,7 +98,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     String? selectedMapel = isEdit ? jadwal['mata_pelajaran'] : null;
     String? selectedGuru = isEdit ? jadwal['guru_pengampu'] : null;
 
-    // Jika data lama ada tapi tidak ada di list standar, tambahkan sementara ke list agar tidak error
     if (isEdit) {
       if (selectedKelas != null && !_kelasList.contains(selectedKelas))
         _kelasList.add(selectedKelas!);
@@ -310,7 +290,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                     backgroundColor: Colors.blue.shade900,
                   ),
                   onPressed: () async {
-                    // Validasi form agar tidak ada yang kosong
                     if (selectedHari == null ||
                         selectedKelas == null ||
                         selectedGuru == null ||
@@ -348,8 +327,8 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                         await _supabase.from('jadwal').insert(data);
                       }
 
-                      Navigator.pop(context); // Tutup dialog
-                      _fetchJadwal(); // Refresh list jadwal di background
+                      Navigator.pop(context);
+                      _fetchJadwal();
                       _showSnackBar(
                         'Jadwal berhasil disimpan & disinkronkan!',
                         Colors.green,
