@@ -576,23 +576,32 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                           ),
                         ),
                         hint: const Text('Pilih Pelajaran Saat Ini...'),
-                        items: _jadwalHariIni
-                            .map(
-                              (j) => DropdownMenuItem(
-                                value: j,
-                                child: Text(
-                                  '${j['mata_pelajaran']} (${j['jam_mulai']})',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                        items: _jadwalHariIni.map((j) {
+                          // Potong detik dari database agar rapi. Contoh: "07:45:00" jadi "07:45"
+                          String jMulai =
+                              j['jam_mulai'] != null &&
+                                  j['jam_mulai'].length >= 5
+                              ? j['jam_mulai'].substring(0, 5)
+                              : '?';
+                          String jSelesai =
+                              j['jam_selesai'] != null &&
+                                  j['jam_selesai'].length >= 5
+                              ? j['jam_selesai'].substring(0, 5)
+                              : '?';
+
+                          return DropdownMenuItem(
+                            value: j,
+                            child: Text(
+                              '${j['mata_pelajaran']} ($jMulai - $jSelesai)',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
                               ),
-                            )
-                            .toList(),
+                            ),
+                          );
+                        }).toList(), // <--- INI KOMA YANG SEBELUMNYA HILANG
                         onChanged: (val) =>
                             setState(() => _selectedJadwal = val),
                       ),
-
                 const SizedBox(height: 24),
 
                 const Text(
