@@ -830,12 +830,6 @@ class DetailProfilSiswaScreen extends StatelessWidget {
                   nik,
                 ),
                 const Divider(height: 24),
-                _itemProfil(
-                  Icons.contact_page_rounded,
-                  'Nomor Kartu Keluarga (KK)',
-                  noKk,
-                ),
-                const Divider(height: 24),
 
                 if (tempatLahir.trim().isNotEmpty) ...[
                   _itemProfil(
