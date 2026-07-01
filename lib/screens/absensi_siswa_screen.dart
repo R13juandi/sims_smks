@@ -37,7 +37,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
   ];
 
   // ==========================================
-  // VALIDASI LAPIS 2: JADWAL & WAKTU (BARU)
+  // VALIDASI LAPIS 2: JADWAL & WAKTU
   // ==========================================
   bool _isWaktuValid = false;
   String _pesanValidasiWaktu = "Memeriksa jadwal...";
@@ -99,11 +99,12 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       String hariIni = _getHariIni();
       if (hariIni == 'Sabtu' || hariIni == 'Minggu') hariIni = 'Senin';
 
+      // PERBAIKAN: Menggunakan .ilike untuk menghindari error huruf besar/kecil dan spasi
       final jadwalRes = await _supabase
           .from('jadwal')
           .select('*')
-          .eq('kelas', kelasSiswa)
-          .eq('hari', hariIni)
+          .ilike('kelas', '%$kelasSiswa%')
+          .ilike('hari', hariIni)
           .order('jam_mulai', ascending: true);
 
       if (mounted) {
@@ -120,14 +121,14 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
     }
   }
 
-  // FUNGSI BARU: Memvalidasi Jam Operasional Sekolah
+  // FUNGSI Memvalidasi Jam Operasional Sekolah
   void _validasiJadwalDanWaktu() {
     DateTime now = DateTime.now();
     int menitSekarang = (now.hour * 60) + now.minute;
 
     // Konfigurasi Jam Operasional (06:00 Pagi s/d 15:00 Sore)
     int batasMulai = (6 * 60) + 0;
-    int batasSelesai = (15 * 60) + 0;
+    int batasSelesai = (23 * 60) + 0;
 
     if (_jadwalHariIni.isEmpty) {
       setState(() {
@@ -139,7 +140,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       setState(() {
         _isWaktuValid = false;
         _pesanValidasiWaktu =
-            "Tombol Terkunci: Di luar jam operasional sekolah (06:00 - 15:00).";
+            "Tombol Terkunci: Di luar jam operasional sekolah (06:00 - 23:00).";
       });
     } else {
       setState(() {
@@ -274,11 +275,13 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied)
+        if (permission == LocationPermission.denied) {
           throw 'Izin lokasi (GPS) ditolak!';
+        }
       }
-      if (permission == LocationPermission.deniedForever)
+      if (permission == LocationPermission.deniedForever) {
         throw 'Izin lokasi diblokir permanen oleh HP Anda.';
+      }
 
       Position posisiSekarang = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -305,8 +308,9 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         }
       }
 
-      if (!isLokasiValid)
+      if (!isLokasiValid) {
         throw 'Absen Ditolak!\nAnda berada di luar area. Jarak Anda ${jarakTerdekat.toInt()} meter dari lokasi terdekat ($namaLokasiTerdekat). Maksimal $_toleransiMeter m.';
+      }
 
       // ==========================================
       // VALIDASI KETERLAMBATAN
@@ -353,17 +357,21 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       final inputImage = InputImage.fromFilePath(foto.path);
       final List<Face> faces = await _faceDetector.processImage(inputImage);
 
-      if (faces.isEmpty)
+      if (faces.isEmpty) {
         throw 'Verifikasi Gagal!\nWajah manusia tidak ditemukan dalam foto.';
-      if (faces.length > 1)
+      }
+      if (faces.length > 1) {
         throw 'Verifikasi Gagal!\nTerdeteksi lebih dari satu wajah. Pastikan hanya ada Anda di dalam kamera.';
+      }
 
       final Face face = faces.first;
 
-      if (face.headEulerAngleY! > 12 || face.headEulerAngleY! < -12)
+      if (face.headEulerAngleY! > 12 || face.headEulerAngleY! < -12) {
         throw 'Verifikasi Gagal!\nWajah harus lurus menghadap kamera. Jangan menoleh ke samping.';
-      if (face.headEulerAngleZ! > 12 || face.headEulerAngleZ! < -12)
+      }
+      if (face.headEulerAngleZ! > 12 || face.headEulerAngleZ! < -12) {
         throw 'Verifikasi Gagal!\nPosisi kepala miring. Harap tegakkan kepala Anda menghadap kamera.';
+      }
 
       if (face.leftEyeOpenProbability != null &&
           face.rightEyeOpenProbability != null) {
@@ -427,7 +435,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       if (!mounted) return;
       _showSuccessDialog(
         'Absensi Berhasil!',
-        'Lokasi dan Wajah Anda telah diverifikasi.\nStatus: ${_tipeAbsen == 'Masuk' ? (statusAbsenDb == 'T' ? 'TERLAMBAT' : 'TEPAT WAKTU') : 'SELESAI'}',
+        'Lokasi dan Wajah Anda telah diverifikasi.\nStatus: ${_tipeAbsen == 'Masuk' ? (statusAbsenDb == 'T' ? 'TERLAMBAT' : 'TEPAT WAKTU') : 'IZIN / SAKIT'}',
         Icons.check_circle,
         Colors.green,
       );
@@ -487,8 +495,8 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                 ),
               ),
               onPressed: () {
-                Navigator.pop(context);
-                Navigator.pop(context);
+                Navigator.pop(context); // Tutup dialog
+                Navigator.pop(context); // Kembali ke Beranda
               },
               child: const Text(
                 'KEMBALI KE BERANDA',
@@ -577,7 +585,6 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                         ),
                         hint: const Text('Pilih Pelajaran Saat Ini...'),
                         items: _jadwalHariIni.map((j) {
-                          // Potong detik dari database agar rapi. Contoh: "07:45:00" jadi "07:45"
                           String jMulai =
                               j['jam_mulai'] != null &&
                                   j['jam_mulai'].length >= 5
@@ -598,7 +605,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                               ),
                             ),
                           );
-                        }).toList(), // <--- INI KOMA YANG SEBELUMNYA HILANG
+                        }).toList(),
                         onChanged: (val) =>
                             setState(() => _selectedJadwal = val),
                       ),
@@ -614,58 +621,28 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                 ),
                 const SizedBox(height: 8),
 
+                // PERBAIKAN: Hapus Opsi Selesai, Susun Vertikal
                 Column(
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey.shade300),
-                            ),
-                            child: RadioListTile<String>(
-                              title: const Text(
-                                'Masuk',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              value: 'Masuk',
-                              groupValue: _tipeAbsen,
-                              activeColor: const Color(0xFF1E40AF),
-                              onChanged: (val) =>
-                                  setState(() => _tipeAbsen = val!),
-                            ),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: RadioListTile<String>(
+                        title: const Text(
+                          'Masuk',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey.shade300),
-                            ),
-                            child: RadioListTile<String>(
-                              title: const Text(
-                                'Selesai',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              value: 'Selesai',
-                              groupValue: _tipeAbsen,
-                              activeColor: const Color(0xFF1E40AF),
-                              onChanged: (val) =>
-                                  setState(() => _tipeAbsen = val!),
-                            ),
-                          ),
-                        ),
-                      ],
+                        value: 'Masuk',
+                        groupValue: _tipeAbsen,
+                        activeColor: const Color(0xFF1E40AF),
+                        onChanged: (val) => setState(() => _tipeAbsen = val!),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Container(
@@ -728,7 +705,6 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                           ),
                           elevation: 3,
                         ),
-                        // Logika penguncian tombol ada di sini
                         onPressed:
                             (!_isWaktuValid && _tipeAbsen != 'Izin / Sakit')
                             ? null
