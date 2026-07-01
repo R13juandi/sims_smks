@@ -25,44 +25,11 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   ];
 
   // ==========================================================
-  // KONFIGURASI MATA PELAJARAN SPESIFIK PER GURU
-  // Admin bisa menambahkan Guru baru & Mapelnya di sini
+  // 🔥 PERBAIKAN: Variabel Dinamis untuk Mapel Guru
+  // Tidak lagi menggunakan data hardcode. Data akan ditarik
+  // langsung dari kolom 'mapel' di tabel 'profiles' Supabase.
   // ==========================================================
-  final Map<String, List<String>> _guruMapelConfig = {
-    'Djuwandi': [
-      'Bahasa Indonesia',
-      'Matematika',
-      'KKA (Koding dan Kecerdasan AI)',
-    ],
-    'Iqbal': ['Kejuruan TKJ', 'Informatika', 'Project IPAS'],
-    'Ahmad': ['PAI dan Budi Pekerti', 'PPKN', 'Sejarah'],
-    'Rosita': ['Bahasa Inggris', 'Produk Kreatif dan Kewirausahaan'],
-    // NAMA GURU BARU (Contoh)
-    'Muhammad Rizqi': [
-      'Matematika',
-      'Informatika',
-      'Kejuruan TKJ',
-      'Project IPAS',
-    ],
-  };
-
-  // Mapel Default jika Guru belum diatur di atas
-  final List<String> _defaultMapelList = [
-    'PAI dan Budi Pekerti',
-    'PPKN',
-    'Bahasa Indonesia',
-    'Matematika',
-    'Bahasa Inggris',
-    'Sejarah',
-    'PJOK',
-    'Seni Budaya',
-    'Project IPAS',
-    'Informatika',
-    'Kejuruan TKJ',
-    'KKA (Koding dan Kecerdasan AI)',
-    'Produk Kreatif dan Kewirausahaan',
-    'Muatan Lokal',
-  ];
+  Map<String, List<String>> _dynamicGuruMapel = {};
 
   @override
   void initState() {
@@ -71,19 +38,30 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     _fetchJadwal();
   }
 
-  // 🔥 PERBAIKAN: Menggunakan 'full_name' sesuai dengan database Supabase Anda
   Future<void> _fetchGurus() async {
     try {
+      // 🔥 PERBAIKAN: Mengambil kolom 'mapel' sekaligus dari database
       final response = await _supabase
           .from('profiles')
-          .select('full_name, role');
+          .select('full_name, role, mapel');
 
       List<String> daftarGuru = [];
+      Map<String, List<String>> tempGuruMapel = {};
+
       for (var user in response) {
         if (user['role'] != null &&
             user['role'].toString().toLowerCase() == 'guru') {
           if (user['full_name'] != null) {
-            daftarGuru.add(user['full_name'].toString());
+            String namaGuru = user['full_name'].toString();
+            daftarGuru.add(namaGuru);
+
+            // Menarik array mapel spesifik milik guru ini
+            List<String> mapelDiampu = [];
+            if (user['mapel'] != null) {
+              mapelDiampu = List<String>.from(user['mapel']);
+            }
+            // Simpan ke dalam mapping sementara
+            tempGuruMapel[namaGuru] = mapelDiampu;
           }
         }
       }
@@ -93,6 +71,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
       if (mounted) {
         setState(() {
           _guruList = daftarGuru;
+          _dynamicGuruMapel = tempGuruMapel; // Update data dropdown
         });
       }
     } catch (e) {
@@ -131,16 +110,22 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
 
     List<String> currentMapelList = [];
     if (selectedGuru != null) {
-      currentMapelList = _guruMapelConfig[selectedGuru] ?? _defaultMapelList;
+      // 🔥 PERBAIKAN: Ambil daftar mapel berdasarkan Guru yang dipilih dari DB
+      currentMapelList = List.from(_dynamicGuruMapel[selectedGuru] ?? []);
     }
 
     if (isEdit) {
-      if (selectedKelas != null && !_kelasList.contains(selectedKelas))
+      if (selectedKelas != null && !_kelasList.contains(selectedKelas)) {
         _kelasList.add(selectedKelas!);
-      if (selectedGuru != null && !_guruList.contains(selectedGuru))
+      }
+      if (selectedGuru != null && !_guruList.contains(selectedGuru)) {
         _guruList.add(selectedGuru!);
-      if (selectedMapel != null && !currentMapelList.contains(selectedMapel))
-        currentMapelList.add(selectedMapel!);
+      }
+      if (selectedMapel != null && !currentMapelList.contains(selectedMapel)) {
+        currentMapelList.add(
+          selectedMapel!,
+        ); // Agar dropdown tidak error saat Edit
+      }
     }
 
     TimeOfDay? jamMulai = isEdit && jadwal['jam_mulai'] != null
@@ -207,14 +192,17 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                       onChanged: (val) {
                         setDialogState(() {
                           selectedGuru = val;
-                          selectedMapel = null;
+                          selectedMapel =
+                              null; // Kosongkan mapel jika guru berganti
+
+                          // 🔥 PERBAIKAN: Ganti isi list mapel saat dropdown guru di-klik
                           if (val != null &&
-                              _guruMapelConfig.containsKey(val)) {
+                              _dynamicGuruMapel.containsKey(val)) {
                             currentMapelList = List.from(
-                              _guruMapelConfig[val]!,
+                              _dynamicGuruMapel[val]!,
                             );
                           } else {
-                            currentMapelList = List.from(_defaultMapelList);
+                            currentMapelList = [];
                           }
                         });
                       },
@@ -242,14 +230,17 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                     ),
                     const SizedBox(height: 12),
 
+                    // 🔥 PERBAIKAN: Dropdown Mapel kini terkunci khusus untuk Mapel milik Guru
                     DropdownButtonFormField<String>(
                       value: selectedMapel,
                       hint: Text(
                         selectedGuru == null
                             ? 'Pilih Guru Terlebih Dahulu'
-                            : 'Pilih Mata Pelajaran',
+                            : (currentMapelList.isEmpty
+                                  ? 'Guru ini belum punya mapel'
+                                  : 'Pilih Mata Pelajaran'),
                       ),
-                      items: selectedGuru == null
+                      items: (selectedGuru == null || currentMapelList.isEmpty)
                           ? null
                           : currentMapelList
                                 .map(
@@ -259,14 +250,17 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                                   ),
                                 )
                                 .toList(),
-                      onChanged: selectedGuru == null
+                      onChanged:
+                          (selectedGuru == null || currentMapelList.isEmpty)
                           ? null
                           : (val) => setDialogState(() => selectedMapel = val),
                       decoration: InputDecoration(
                         labelText: 'Mata Pelajaran',
                         border: const OutlineInputBorder(),
-                        filled: selectedGuru == null,
-                        fillColor: selectedGuru == null
+                        filled:
+                            (selectedGuru == null || currentMapelList.isEmpty),
+                        fillColor:
+                            (selectedGuru == null || currentMapelList.isEmpty)
                             ? Colors.grey.shade200
                             : Colors.white,
                       ),
@@ -288,8 +282,9 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                                     jamMulai ??
                                     const TimeOfDay(hour: 7, minute: 0),
                               );
-                              if (time != null)
+                              if (time != null) {
                                 setDialogState(() => jamMulai = time);
+                              }
                             },
                             icon: const Icon(Icons.access_time),
                             label: Text(
@@ -317,8 +312,9 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                                     jamSelesai ??
                                     const TimeOfDay(hour: 8, minute: 30),
                               );
-                              if (time != null)
+                              if (time != null) {
                                 setDialogState(() => jamSelesai = time);
+                              }
                             },
                             icon: const Icon(Icons.access_time_filled),
                             label: Text(
@@ -406,7 +402,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     );
   }
 
-  Future<void> _hapusJadwal(int id) async {
+  Future<void> _hapusJadwal(dynamic id) async {
     try {
       await _supabase.from('jadwal').delete().eq('id', id);
       _fetchJadwal();
