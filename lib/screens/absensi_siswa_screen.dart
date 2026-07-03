@@ -25,6 +25,13 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
   String _tipeAbsen = 'Masuk'; // Default opsi absen
 
   // ==========================================
+  // VARIABEL TAMBAHAN UNTUK UI LOKASI (GEOFENCING)
+  // ==========================================
+  String _infoLokasiUI = "Sedang mencari lokasi...";
+  Color _warnaLokasiUI = Colors.grey;
+  bool _isLokasiValid = false;
+
+  // ==========================================
   // VALIDASI LAPIS 1: GEOFENCING (LOKASI)
   // Diubah ke 50.0 Meter sesuai instruksi Dosen
   // ==========================================
@@ -54,12 +61,87 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
   void initState() {
     super.initState();
     _loadDataAwal();
+    _cekLokasiSekarang(); // Panggil pengecekan lokasi untuk ditampilkan di UI
   }
 
   @override
   void dispose() {
     _faceDetector.close();
     super.dispose();
+  }
+
+  // ==========================================
+  // FUNGSI BARU: CEK LOKASI UNTUK UI
+  // ==========================================
+  Future<void> _cekLokasiSekarang() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          setState(() {
+            _infoLokasiUI = "Izin lokasi ditolak. Tidak bisa absen.";
+            _warnaLokasiUI = Colors.red;
+          });
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _infoLokasiUI = "Izin GPS diblokir permanen oleh HP.";
+          _warnaLokasiUI = Colors.red;
+        });
+        return;
+      }
+
+      Position posisiSekarang = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      double jarakTerdekat = double.infinity;
+      String namaLokasiTerdekat = '';
+      bool valid = false;
+
+      for (var lokasi in _lokasiDiizinkan) {
+        double jarak = Geolocator.distanceBetween(
+          lokasi['lat'],
+          lokasi['lng'],
+          posisiSekarang.latitude,
+          posisiSekarang.longitude,
+        );
+        if (jarak < jarakTerdekat) {
+          jarakTerdekat = jarak;
+          namaLokasiTerdekat = lokasi['nama'];
+        }
+        if (jarak <= _toleransiMeter) {
+          valid = true;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLokasiValid = valid;
+          if (valid) {
+            _infoLokasiUI = "Anda berada di dalam area $namaLokasiTerdekat (Jarak: ${jarakTerdekat.toInt()} meter). Bisa melakukan absensi.";
+            _warnaLokasiUI = Colors.green;
+          } else {
+            String jarakTampil = jarakTerdekat > 1000 
+                ? "${(jarakTerdekat / 1000).toStringAsFixed(2)} km" 
+                : "${jarakTerdekat.toInt()} meter";
+                
+            _infoLokasiUI = "Anda di LUAR AREA sekolah.\nJarak Anda: $jarakTampil dari $namaLokasiTerdekat.";
+            _warnaLokasiUI = Colors.red;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _infoLokasiUI = "Gagal mendapatkan lokasi GPS. Pastikan GPS aktif.";
+          _warnaLokasiUI = Colors.orange;
+        });
+      }
+    }
   }
 
   String _getHariIni() {
@@ -99,7 +181,6 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       String hariIni = _getHariIni();
       if (hariIni == 'Sabtu' || hariIni == 'Minggu') hariIni = 'Senin';
 
-      // PERBAIKAN: Menggunakan .ilike untuk menghindari error huruf besar/kecil dan spasi
       final jadwalRes = await _supabase
           .from('jadwal')
           .select('*')
@@ -113,7 +194,6 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
           _isLoading = false;
         });
 
-        // Panggil validasi waktu setelah data jadwal berhasil didapatkan
         _validasiJadwalDanWaktu();
       }
     } catch (e) {
@@ -121,12 +201,10 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
     }
   }
 
-  // FUNGSI Memvalidasi Jam Operasional Sekolah
   void _validasiJadwalDanWaktu() {
     DateTime now = DateTime.now();
     int menitSekarang = (now.hour * 60) + now.minute;
 
-    // Konfigurasi Jam Operasional (06:00 Pagi s/d 15:00 Sore)
     int batasMulai = (6 * 60) + 0;
     int batasSelesai = (23 * 60) + 0;
 
@@ -150,7 +228,6 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
     }
   }
 
-  // DIALOG UNTUK MENGISI ALASAN IZIN
   void _tampilkanDialogIzin() {
     final TextEditingController alasanController = TextEditingController();
 
@@ -216,7 +293,6 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
     );
   }
 
-  // MENYIMPAN STATUS IZIN (Tanpa Foto)
   Future<void> _prosesSimpanIzin(String alasan) async {
     setState(() => _isProcessingAbsen = true);
     try {
@@ -231,17 +307,18 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         'mapel': _selectedJadwal!['mata_pelajaran'],
         'kelas': _biodataSiswa['kelas'],
         'status': 'I',
+        'status_verifikasi': 'Pending', // KODE TAMBAHAN UNTUK GURU
         'keterangan': 'Izin/Sakit: $alasan',
         'guru_pengampu': _selectedJadwal!['guru_pengampu'] ?? 'Sistem Otomatis',
         'lat': null,
         'lng': null,
-        'foto_url': null, // Izin tidak menyertakan foto selfie
+        'foto_url': null, 
       }, onConflict: 'siswa_id, tanggal, mapel');
 
       if (!mounted) return;
       _showSuccessDialog(
         'Pengajuan Izin Berhasil!',
-        'Data izin Anda telah tercatat di sistem.',
+        'Data izin Anda telah terkirim dan menunggu verifikasi dari Guru Mata Pelajaran.',
         Icons.info_rounded,
         Colors.orange,
       );
@@ -266,28 +343,22 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       return;
     }
 
+    // CEK ULANG LOKASI SAAT TOMBOL DITEKAN
+    if (!_isLokasiValid) {
+      _showSnackBar(
+        'Absen Ditolak! Anda berada di luar area sekolah.',
+        Colors.red,
+      );
+      return;
+    }
+
     setState(() => _isProcessingAbsen = true);
 
     try {
-      // ==========================================
-      // 1. GEOFENCING LOKASI (Algoritma Haversine)
-      // ==========================================
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          throw 'Izin lokasi (GPS) ditolak!';
-        }
-      }
-      if (permission == LocationPermission.deniedForever) {
-        throw 'Izin lokasi diblokir permanen oleh HP Anda.';
-      }
-
       Position posisiSekarang = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      bool isLokasiValid = false;
       double jarakTerdekat = double.infinity;
       String namaLokasiTerdekat = '';
 
@@ -302,19 +373,8 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
           jarakTerdekat = jarak;
           namaLokasiTerdekat = lokasi['nama'];
         }
-        if (jarak <= _toleransiMeter) {
-          isLokasiValid = true;
-          break;
-        }
       }
 
-      if (!isLokasiValid) {
-        throw 'Absen Ditolak!\nAnda berada di luar area. Jarak Anda ${jarakTerdekat.toInt()} meter dari lokasi terdekat ($namaLokasiTerdekat). Maksimal $_toleransiMeter m.';
-      }
-
-      // ==========================================
-      // VALIDASI KETERLAMBATAN
-      // ==========================================
       final String jamMulaiStr = _selectedJadwal!['jam_mulai'] ?? "07:00";
       final List<String> waktuSplit = jamMulaiStr.split(':');
       final int jamMulai = int.parse(waktuSplit[0]);
@@ -342,9 +402,6 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         catatanWaktu = 'Terlambat';
       }
 
-      // ==========================================
-      // 3. SCAN WAJAH (Algoritma CNN via ML Kit)
-      // ==========================================
       final ImagePicker picker = ImagePicker();
       final XFile? foto = await picker.pickImage(
         source: ImageSource.camera,
@@ -393,9 +450,6 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         throw 'Verifikasi Gagal!\nBagian hidung, mulut, atau pipi tidak terdeteksi bersih. Jangan menutupi wajah dengan tangan!';
       }
 
-      // ==========================================
-      // 4. UPLOAD FOTO KE SUPABASE STORAGE
-      // ==========================================
       _showSnackBar('Mengunggah foto dan menyimpan data...', Colors.blue);
       final user = _supabase.auth.currentUser;
       final String ekstensiFile = foto.path.split('.').last;
@@ -411,9 +465,6 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
           .from('foto_absensi')
           .getPublicUrl(namaFileUnik);
 
-      // ==========================================
-      // 5. SIMPAN DATA ABSEN KE TABEL
-      // ==========================================
       final String tanggalFormat = DateFormat(
         'yyyy-MM-dd',
       ).format(DateTime.now());
@@ -424,6 +475,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         'mapel': _selectedJadwal!['mata_pelajaran'],
         'kelas': _biodataSiswa['kelas'],
         'status': statusAbsenDb,
+        'status_verifikasi': 'Pending', // KODE TAMBAHAN UNTUK GURU
         'keterangan':
             '$_tipeAbsen ($catatanWaktu) - Jarak: ${jarakTerdekat.toInt()}m dari $namaLokasiTerdekat',
         'guru_pengampu': _selectedJadwal!['guru_pengampu'] ?? 'Sistem Otomatis',
@@ -435,7 +487,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       if (!mounted) return;
       _showSuccessDialog(
         'Absensi Berhasil!',
-        'Lokasi dan Wajah Anda telah diverifikasi.\nStatus: ${_tipeAbsen == 'Masuk' ? (statusAbsenDb == 'T' ? 'TERLAMBAT' : 'TEPAT WAKTU') : 'IZIN / SAKIT'}',
+        'Data terkirim dan menunggu di-verifikasi oleh Guru.\nStatus: ${_tipeAbsen == 'Masuk' ? (statusAbsenDb == 'T' ? 'TERLAMBAT' : 'TEPAT WAKTU') : 'IZIN / SAKIT'}',
         Icons.check_circle,
         Colors.green,
       );
@@ -524,12 +576,52 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
+        // TAMBAHAN TOMBOL REFRESH LOKASI
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () {
+              _showSnackBar('Memperbarui lokasi...', Colors.blue);
+              _cekLokasiSekarang();
+            },
+            tooltip: "Refresh Lokasi",
+          )
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(24),
               children: [
+                // ==========================================
+                // TAMPILAN BANNER UI LOKASI (GEOFENCING)
+                // ==========================================
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _warnaLokasiUI.withOpacity(0.1),
+                    border: Border.all(color: _warnaLokasiUI),
+                    borderRadius: BorderRadius.circular(12)
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.location_on, color: _warnaLokasiUI),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _infoLokasiUI, 
+                          style: TextStyle(
+                            color: _warnaLokasiUI, 
+                            fontWeight: FontWeight.bold, 
+                            fontSize: 12
+                          )
+                        ),
+                      )
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
                 Center(
                   child: Container(
                     width: 140,
@@ -621,7 +713,6 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                 ),
                 const SizedBox(height: 8),
 
-                // PERBAIKAN: Hapus Opsi Selesai, Susun Vertikal
                 Column(
                   children: [
                     Container(
@@ -686,15 +777,14 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                     ),
                   ),
 
-                // TOMBOL ABSEN YANG DIKUNCI SESUAI WAKTU
+                // TOMBOL ABSEN YANG DIKUNCI SESUAI WAKTU DAN LOKASI
                 _isProcessingAbsen
                     ? const Center(child: CircularProgressIndicator())
                     : ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor:
-                              (!_isWaktuValid && _tipeAbsen != 'Izin / Sakit')
-                              ? Colors
-                                    .grey // Warna abu-abu jika terkunci
+                              (_tipeAbsen != 'Izin / Sakit' && (!_isWaktuValid || !_isLokasiValid))
+                              ? Colors.grey // Warna abu-abu jika terkunci
                               : (_tipeAbsen == 'Izin / Sakit'
                                     ? Colors.orange.shade700
                                     : Colors.blue[900]),
@@ -706,7 +796,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                           elevation: 3,
                         ),
                         onPressed:
-                            (!_isWaktuValid && _tipeAbsen != 'Izin / Sakit')
+                            (_tipeAbsen != 'Izin / Sakit' && (!_isWaktuValid || !_isLokasiValid))
                             ? null
                             : _prosesAbsenLengkap,
                         icon: Icon(
