@@ -21,11 +21,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
     super.initState();
     _checkAuth();
 
-    // Memantau perubahan status Login/Logout secara real-time
     Supabase.instance.client.auth.onAuthStateChange.listen((data) {
       final AuthChangeEvent event = data.event;
-      if (event == AuthChangeEvent.signedIn ||
-          event == AuthChangeEvent.signedOut) {
+      if (event == AuthChangeEvent.signedIn || event == AuthChangeEvent.signedOut) {
         _checkAuth();
       }
     });
@@ -39,7 +37,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
     try {
       final session = Supabase.instance.client.auth.currentSession;
 
-      // Jika tidak ada yang login, arahkan ke Login Screen
       if (session == null) {
         if (mounted) {
           setState(() {
@@ -51,11 +48,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
 
       final user = session.user;
-
-      // =======================================================
-      // PERBAIKAN: Mencegah Race Condition (Blank Putih)
-      // Kita suruh sistem menunggu (retry) sampai data profile masuk
-      // =======================================================
       Map<String, dynamic>? profileData;
       int retries = 0;
 
@@ -64,16 +56,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
             .from('profiles')
             .select()
             .eq('id', user.id)
-            .maybeSingle(); // Menggunakan maybeSingle agar tidak crash jika data masih kosong
+            .maybeSingle(); 
 
         if (profileData == null) {
-          // Tunggu 1 detik sebelum mencoba mengecek lagi
           await Future.delayed(const Duration(seconds: 1));
           retries++;
         }
       }
 
-      // Jika setelah 5 detik data tetap tidak ada, amankan aplikasi (Paksa Logout)
       if (profileData == null) {
         await Supabase.instance.client.auth.signOut();
         if (mounted) {
@@ -85,13 +75,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
         return;
       }
 
-      // Membaca peran pengguna dan mengarahkannya ke Dashboard yang tepat
-      final role = profileData['role']?.toString().toLowerCase();
+      // 🔥 LOGIKA ROUTING OTOMATIS (KEBAL TYPO)
+      final role = profileData['role']?.toString().toLowerCase().trim() ?? 'siswa';
       Widget nextWidget;
 
-      if (role == 'admin') {
+      if (role.contains('admin') || role.contains('tata') || role.contains('kepsek')) {
         nextWidget = const AdminDashboard();
-      } else if (role == 'guru') {
+      } else if (role.contains('guru')) {
         nextWidget = const GuruDashboard();
       } else {
         nextWidget = const SiswaDashboard();
@@ -104,8 +94,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         });
       }
     } catch (e) {
-      // Jika terjadi error sistem, kembalikan secara aman ke halaman Login
-      print('Error Auth: $e');
+      debugPrint('Error Auth: $e');
       await Supabase.instance.client.auth.signOut();
       if (mounted) {
         setState(() {
@@ -118,7 +107,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    // Tampilan Loading saat sedang mengecek akun
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: Color(0xFFF8FAFC),
@@ -130,11 +118,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
               SizedBox(height: 16),
               Text(
                 'Menyiapkan sesi Anda...',
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
+                style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, letterSpacing: 0.5),
               ),
             ],
           ),
