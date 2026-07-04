@@ -47,6 +47,7 @@ dependencies:
   #supabase_flutter: ^2.5.2 # Komunikasi ke database Supabase
   shared_preferences: ^2.0.15 # Menyimpan data login secara lokal
   excel: ^4.0.6
+  path_provider: ^2.1.6
 
 
 dev_dependencies:
