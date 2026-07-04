@@ -299,7 +299,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
         ElevatedButton.icon(
           onPressed: () { Navigator.push(context, MaterialPageRoute(builder: (context) => const RekapAbsensiAdminScreen())); },
           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 55), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 2),
-          icon: const Icon(Icons.analytics_rounded), label: const Text('LIHAT DETAIL REKAP SELURUH SEKOLAH', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+          icon: const Icon(Icons.analytics_rounded), label: const Text('LIHAT LAPORAN AKUMULASI BULANAN', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5)),
         ),
         const SizedBox(height: 20),
         Container(
@@ -326,6 +326,9 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
   }
 }
 
+// ====================================================================================
+// 🔥 HALAMAN BARU: LAPORAN AKUMULASI ABSENSI BULANAN (LEBIH KEREN & PRAKTIS)
+// ====================================================================================
 class RekapAbsensiAdminScreen extends StatefulWidget {
   const RekapAbsensiAdminScreen({super.key});
 
@@ -336,136 +339,321 @@ class RekapAbsensiAdminScreen extends StatefulWidget {
 class _RekapAbsensiAdminScreenState extends State<RekapAbsensiAdminScreen> {
   final _supabase = Supabase.instance.client;
   bool _isLoading = true;
-  List<Map<String, dynamic>> _dataAbsen = [];
-  DateTime _selectedDate = DateTime.now();
+
+  // Variabel penyimpan data
+  List<Map<String, dynamic>> _rekapData = [];
+  List<Map<String, dynamic>> _filteredData = [];
+
+  // Filter Default (Otomatis mendeteksi Bulan & Tahun saat ini)
+  String _selectedBulan = DateFormat('MM').format(DateTime.now());
+  String _selectedTahun = DateFormat('yyyy').format(DateTime.now());
+  final TextEditingController _searchController = TextEditingController();
+
+  final List<Map<String, String>> _listBulan = [
+    {'id': '01', 'nama': 'Januari'}, {'id': '02', 'nama': 'Februari'},
+    {'id': '03', 'nama': 'Maret'}, {'id': '04', 'nama': 'April'},
+    {'id': '05', 'nama': 'Mei'}, {'id': '06', 'nama': 'Juni'},
+    {'id': '07', 'nama': 'Juli'}, {'id': '08', 'nama': 'Agustus'},
+    {'id': '09', 'nama': 'September'}, {'id': '10', 'nama': 'Oktober'},
+    {'id': '11', 'nama': 'November'}, {'id': '12', 'nama': 'Desember'},
+  ];
+
+  final List<String> _listTahun = ['2024', '2025', '2026', '2027', '2028'];
 
   @override
   void initState() {
     super.initState();
-    _fetchRekapSeluruhSekolah();
+    _fetchRekapBulanan();
   }
 
-  Future<void> _fetchRekapSeluruhSekolah() async {
+  Future<void> _fetchRekapBulanan() async {
     setState(() => _isLoading = true);
     try {
-      final tanggalFilter = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      // 1. Trik Tanggal: Hindari error tipe data 'Date' di Supabase
+      int year = int.parse(_selectedTahun);
+      int month = int.parse(_selectedBulan);
+      
+      String startDate = '$_selectedTahun-$_selectedBulan-01';
+      // DateTime(year, month + 1, 0) akan otomatis mencari hari terakhir di bulan tsb (28, 30, atau 31)
+      int lastDay = DateTime(year, month + 1, 0).day; 
+      String endDate = '$_selectedTahun-$_selectedBulan-${lastDay.toString().padLeft(2, '0')}';
 
+      // Ambil data dari tgl 1 sampai akhir bulan menggunakan .gte dan .lte
       final res = await _supabase
           .from('absensi')
-          .select('*, profiles!inner(full_name, nisn)')
-          .eq('tanggal', tanggalFilter)
-          .order('kelas', ascending: true);
+          .select('status, profiles(id, full_name, nisn, kelas)')
+          .gte('tanggal', startDate)
+          .lte('tanggal', endDate);
+
+      Map<String, Map<String, dynamic>> akumulasi = {};
+
+      for (var item in res) {
+        // Amankan dari data kosong (null)
+        final profile = item['profiles'];
+        if (profile == null) continue; 
+
+        final idSiswa = profile['id'] ?? 'unknown';
+        final status = item['status'].toString().toUpperCase();
+
+        // Buat kerangka nilai awal (0) jika siswa belum ada di daftar
+        if (!akumulasi.containsKey(idSiswa)) {
+          akumulasi[idSiswa] = {
+            'id': idSiswa,
+            'nama': profile['full_name'] ?? 'Tanpa Nama',
+            'nisn': profile['nisn'] ?? '-',
+            'kelas': profile['kelas'] ?? '-',
+            'H': 0, 'I': 0, 'S': 0, 'A': 0, 'T': 0,
+          };
+        }
+
+        // Kalkulator Otomatis
+        if (status.contains('H') || status.contains('TEPAT')) {
+          akumulasi[idSiswa]!['H'] = (akumulasi[idSiswa]!['H'] as int) + 1;
+        } else if (status == 'I' || status == 'IZIN') {
+          akumulasi[idSiswa]!['I'] = (akumulasi[idSiswa]!['I'] as int) + 1;
+        } else if (status == 'S' || status == 'SAKIT') {
+          akumulasi[idSiswa]!['S'] = (akumulasi[idSiswa]!['S'] as int) + 1;
+        } else if (status == 'A' || status == 'ALPA') {
+          akumulasi[idSiswa]!['A'] = (akumulasi[idSiswa]!['A'] as int) + 1;
+        } else if (status == 'T' || status == 'TERLAMBAT') {
+          akumulasi[idSiswa]!['T'] = (akumulasi[idSiswa]!['T'] as int) + 1;
+        }
+      }
+
+      final List<Map<String, dynamic>> finalData = akumulasi.values.toList();
+      
+      // Urutkan rapi berdasarkan Kelas, lalu Abjad Nama
+      finalData.sort((a, b) {
+        int cmp = a['kelas'].toString().compareTo(b['kelas'].toString());
+        if (cmp != 0) return cmp;
+        return a['nama'].toString().compareTo(b['nama'].toString());
+      });
 
       if (mounted) {
         setState(() {
-          _dataAbsen = List<Map<String, dynamic>>.from(res);
+          _rekapData = finalData;
+          _filteredData = finalData;
           _isLoading = false;
         });
       }
     } catch (e) {
+      debugPrint('Error fetch rekap bulanan: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _pilihTanggal() async {
-    final picked = await showDatePicker(context: context, initialDate: _selectedDate, firstDate: DateTime(2024), lastDate: DateTime.now());
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
-      _fetchRekapSeluruhSekolah();
+  // Fitur Pencarian Pintar (Cari Nama atau Kelas)
+  void _filterPencarian(String query) {
+    if (query.isEmpty) {
+      setState(() => _filteredData = _rekapData);
+      return;
     }
-  }
-
-  void _tampilkanDetailFotoAdmin(BuildContext context, String url, String namaSiswa) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppBar(title: Text('Bukti Presensi: $namaSiswa', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black)), backgroundColor: Colors.white, elevation: 0, automaticallyImplyLeading: false, actions: [IconButton(icon: const Icon(Icons.close, color: Colors.black), onPressed: () => Navigator.pop(context))]),
-            InteractiveViewer(panEnabled: true, minScale: 0.5, maxScale: 4.0, child: Image.network(url, fit: BoxFit.contain, loadingBuilder: (context, child, loadingProgress) { if (loadingProgress == null) return child; return const SizedBox(height: 250, child: Center(child: CircularProgressIndicator())); }, errorBuilder: (context, error, stackTrace) => const SizedBox(height: 200, child: Center(child: Icon(Icons.broken_image, size: 50, color: Colors.red))))),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
+    setState(() {
+      _filteredData = _rekapData.where((s) {
+        final nama = s['nama'].toString().toLowerCase();
+        final kelas = s['kelas'].toString().toLowerCase();
+        return nama.contains(query.toLowerCase()) || kelas.contains(query.toLowerCase());
+      }).toList();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(title: const Text('Rekap Keseluruhan Sekolah', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)), backgroundColor: Colors.white, elevation: 0.5, leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.black), onPressed: () => Navigator.pop(context))),
+      appBar: AppBar(
+        title: const Text(
+          'Laporan Akumulasi Bulanan',
+          style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: Column(
         children: [
+          // ================= PANEL FILTER MODERN =================
           Container(
-            padding: const EdgeInsets.all(16), color: Colors.white,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+            ),
+            child: Column(
               children: [
-                Text('Tanggal: ${DateFormat('dd MMM yyyy').format(_selectedDate)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E40AF))),
-                ElevatedButton.icon(onPressed: _pilihTanggal, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E40AF), foregroundColor: Colors.white), icon: const Icon(Icons.calendar_today, size: 16), label: const Text('Ganti')),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedBulan,
+                        decoration: InputDecoration(
+                          labelText: 'Bulan',
+                          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        ),
+                        items: _listBulan.map((b) => DropdownMenuItem(value: b['id'], child: Text(b['nama']!))).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() => _selectedBulan = val);
+                            _fetchRekapBulanan();
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 1,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedTahun,
+                        decoration: InputDecoration(
+                          labelText: 'Tahun',
+                          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        ),
+                        items: _listTahun.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() => _selectedTahun = val);
+                            _fetchRekapBulanan();
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Cari Nama atau Kelas (Contoh: X TKJ)...',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    filled: true,
+                    fillColor: const Color(0xFFF1F5F9),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  ),
+                  onChanged: _filterPencarian,
+                ),
               ],
             ),
           ),
+
+          // ================= DAFTAR LAPORAN SISWA =================
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _dataAbsen.isEmpty
-                ? const Center(child: Text('Tidak ada data absensi di tanggal ini.', style: TextStyle(color: Colors.grey)))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16), itemCount: _dataAbsen.length,
-                    itemBuilder: (context, index) {
-                      final a = _dataAbsen[index];
-                      final p = a['profiles'] ?? {};
-                      final String? fotoUrl = a['foto_url'];
-                      final String namaMurid = p['full_name'] ?? 'Nama Tidak Dikenal';
-
-                      String statusText = 'Hadir'; Color warnaStatus = Colors.green; String kodeTampil = a['status'] ?? 'H';
-                      if (a['status'] == 'I') { statusText = 'Izin'; warnaStatus = Colors.orange; } else if (a['status'] == 'A') { statusText = 'Alfa'; warnaStatus = Colors.red; } else if (a['status'] == 'T') { statusText = 'Terlambat'; warnaStatus = Colors.amber.shade700; }
-
-                      return Card(
-                        elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade300)), margin: const EdgeInsets.only(bottom: 12),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              CircleAvatar(radius: 22, backgroundColor: warnaStatus.withOpacity(0.15), child: Text(kodeTampil, style: TextStyle(color: warnaStatus, fontWeight: FontWeight.bold, fontSize: 18))),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(namaMurid, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)), Text('NISN: ${p['nisn'] ?? '-'}', style: const TextStyle(fontSize: 11, color: Colors.grey))])),
-                                        const SizedBox(width: 8),
-                                        if (a['status'] == 'I') Container(width: 50, height: 50, decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.edit_document, color: Colors.orange))
-                                        else if (fotoUrl != null && fotoUrl.isNotEmpty) GestureDetector(onTap: () => _tampilkanDetailFotoAdmin(context, fotoUrl, namaMurid), child: ClipRRect(borderRadius: BorderRadius.circular(8), child: Container(decoration: BoxDecoration(border: Border.all(color: Colors.blue.shade200, width: 1.5), borderRadius: BorderRadius.circular(8)), child: Image.network(fotoUrl, width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => Container(width: 50, height: 50, color: Colors.red.shade50, child: const Icon(Icons.broken_image, color: Colors.red, size: 20))))))
-                                        else Container(width: 50, height: 50, decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.person, color: Colors.grey)),
-                                      ],
-                                    ),
-                                    const Divider(height: 16),
-                                    Text('🏫 Kelas : ${a['kelas'] ?? '-'}', style: const TextStyle(fontSize: 12, color: Colors.indigo, fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 4), Text('👨‍🏫 Guru : ${a['guru_pengampu'] ?? '-'}', style: const TextStyle(fontSize: 12, color: Color(0xFF334155))),
-                                    const SizedBox(height: 2), Text('📚 Mapel: ${a['mapel'] ?? '-'}', style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
-                                    const SizedBox(height: 6), Container(width: double.infinity, padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)), child: Text('📌 Status: $statusText\n📝 Keterangan: ${a['keterangan']}', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.black87, height: 1.4))),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E40AF)))
+                : _filteredData.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.folder_off_rounded, size: 64, color: Colors.grey.shade300),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Data bulan ini masih kosong.',
+                              style: TextStyle(color: Colors.grey, fontSize: 14, fontWeight: FontWeight.bold),
+                            ),
+                          ],
                         ),
-                      );
-                    },
-                  ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _filteredData.length,
+                        itemBuilder: (context, index) {
+                          final data = _filteredData[index];
+                          return Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(color: Colors.grey.shade300),
+                            ),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.indigo.shade50,
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          'Kelas: ${data['kelas']}',
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.indigo.shade700),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    data['nama'],
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A)),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'NISN: ${data['nisn']}',
+                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                  ),
+                                  const Divider(height: 24),
+                                  
+                                  // Row Indikator Pencapaian (H, I, S, A, T)
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      _buildStatusBadge('Hadir', data['H'], Colors.green),
+                                      _buildStatusBadge('Izin', data['I'], Colors.orange),
+                                      _buildStatusBadge('Sakit', data['S'], Colors.blue),
+                                      _buildStatusBadge('Alpa', data['A'], Colors.red),
+                                      if (data['T'] > 0) _buildStatusBadge('Telat', data['T'], Colors.amber.shade700),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
           ),
         ],
       ),
+    );
+  }
+
+  // Widget Mini untuk kotak angka status (H, I, S, A)
+  Widget _buildStatusBadge(String label, int count, Color color) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withOpacity(0.3)),
+          ),
+          child: Text(
+            count.toString(),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: color),
+          ),
+        ),
+      ],
     );
   }
 }
