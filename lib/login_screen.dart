@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'screens/admin_dashboard.dart';
+import 'screens/guru_dashboard.dart';
+import 'screens/siswa_dashboard.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -38,18 +41,49 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (response.user != null) {
+        final user = response.user!;
+
+        // Ambil data profile secara instan
+        final profileRes = await _supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle();
+
         if (!mounted) return;
+
+        // Mencegah error jika data kosong, ubah ke huruf kecil semua
+        String role = (profileRes != null && profileRes['role'] != null)
+            ? profileRes['role'].toString().toLowerCase().trim()
+            : 'siswa';
+
+        // Tampilkan snackbar keberhasilan dan info role yang terdeteksi
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Login Berhasil! Mengambil data Anda...'),
+          SnackBar(
+            content: Text('Login Berhasil! (Role Anda: $role)'),
             backgroundColor: Colors.green,
           ),
         );
-        // TODO: Arahkan ke halaman utama/dashboard sesuai role di sini
+
+        // 🔥 LOGIKA PEMBAGIAN HALAMAN (KEBAL TYPO)
+        Widget nextDashboard;
+        if (role.contains('admin') || role.contains('tata') || role.contains('kepsek')) {
+          nextDashboard = const AdminDashboard();
+        } else if (role.contains('guru')) {
+          nextDashboard = const GuruDashboard();
+        } else {
+          nextDashboard = const SiswaDashboard();
+        }
+
+        // Paksa pindah halaman secara mutlak
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => nextDashboard),
+        );
       }
-    } on AuthException catch (e) {
+    } on AuthException catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('Gagal login: Periksa kembali email dan sandi Anda.'),
           backgroundColor: Colors.red,
         ),
@@ -73,19 +107,14 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Background senada dengan Dashboard (Slate muda / Abu-abu kebiruan)
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24.0,
-              vertical: 16.0,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // LOGO SEKOLAH DENGAN EFEK LINGKARAN MENGAMBANG
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -103,17 +132,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     'assets/logo SMK YIA.png',
                     height: 90,
                     errorBuilder: (context, error, stackTrace) {
-                      return const Icon(
-                        Icons.school_rounded,
-                        size: 80,
-                        color: Color(0xFF1E40AF),
-                      );
+                      return const Icon(Icons.school_rounded, size: 80, color: Color(0xFF1E40AF));
                     },
                   ),
                 ),
                 const SizedBox(height: 24),
-
-                // JUDUL APLIKASI
                 const Text(
                   "SMK ISLAM YIA",
                   textAlign: TextAlign.center,
@@ -134,8 +157,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 40),
-
-                // KOTAK FORM LOGIN (CARD)
                 Container(
                   padding: const EdgeInsets.all(32),
                   decoration: BoxDecoration(
@@ -165,8 +186,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 28),
-
-                      // INPUT EMAIL
                       const Text(
                         "Alamat Email",
                         style: TextStyle(
@@ -182,40 +201,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: const TextStyle(fontSize: 14),
                         decoration: InputDecoration(
                           hintText: "Masukkan email terdaftar...",
-                          hintStyle: TextStyle(
-                            color: Colors.grey.shade400,
-                            fontSize: 13,
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.email_outlined,
-                            color: Color(0xFF94A3B8),
-                            size: 20,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade200),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF1E40AF),
-                              width: 1.5,
-                            ),
-                          ),
+                          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                          prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF94A3B8), size: 20),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF1E40AF), width: 1.5)),
                           filled: true,
                           fillColor: Colors.grey.shade50,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                          ),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 16),
                         ),
                       ),
                       const SizedBox(height: 20),
-
-                      // INPUT KATA SANDI
                       const Text(
                         "Kata Sandi",
                         style: TextStyle(
@@ -232,16 +228,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         decoration: InputDecoration(
                           hintText: "••••••••",
                           hintStyle: TextStyle(color: Colors.grey.shade400),
-                          prefixIcon: const Icon(
-                            Icons.lock_outline_rounded,
-                            color: Color(0xFF94A3B8),
-                            size: 20,
-                          ),
+                          prefixIcon: const Icon(Icons.lock_outline_rounded, color: Color(0xFF94A3B8), size: 20),
                           suffixIcon: IconButton(
                             icon: Icon(
-                              _obscurePassword
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined,
+                              _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
                               color: const Color(0xFF94A3B8),
                               size: 20,
                             ),
@@ -251,83 +241,45 @@ class _LoginScreenState extends State<LoginScreen> {
                               });
                             },
                           ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade200),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF1E40AF),
-                              width: 1.5,
-                            ),
-                          ),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF1E40AF), width: 1.5)),
                           filled: true,
                           fillColor: Colors.grey.shade50,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                          ),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 16),
                         ),
                       ),
-
-                      // HILANGKAN TOMBOL LUPA PASSWORD & REGISTER DI SINI
-                      // Jarak langsung ke tombol masuk
                       const SizedBox(height: 32),
-
-                      // TOMBOL MASUK
                       SizedBox(
                         width: double.infinity,
                         height: 52,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(
-                              0xFF1E40AF,
-                            ), // Biru khas Dashboard
+                            backgroundColor: const Color(0xFF1E40AF),
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             elevation: 0,
                           ),
                           onPressed: _isLoading ? null : _login,
                           child: _isLoading
                               ? const SizedBox(
-                                  height: 24,
-                                  width: 24,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.5,
-                                  ),
+                                  height: 24, width: 24,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
                                 )
                               : const Text(
                                   "MASUK SISTEM",
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1.0,
-                                  ),
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.0),
                                 ),
                         ),
                       ),
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 32),
-
-                // FOOTER WATERMARK
                 const Text(
                   "© 2026 SMK Islam YIA.\nPenggunaan sistem dibatasi hanya untuk sivitas akademika.",
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Color(0xFF94A3B8),
-                    fontSize: 11,
-                    height: 1.5,
-                  ),
+                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11, height: 1.5),
                 ),
               ],
             ),
