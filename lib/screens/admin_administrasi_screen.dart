@@ -12,169 +12,302 @@ class AdminAdministrasiScreen extends StatefulWidget {
 class _AdminAdministrasiScreenState extends State<AdminAdministrasiScreen> {
   final _supabase = Supabase.instance.client;
   bool _isLoading = true;
-
   List<Map<String, dynamic>> _listSiswa = [];
-  List<Map<String, dynamic>> _filteredSiswa = [];
-  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    _fetchDaftarSiswa();
+    _fetchSiswa();
   }
 
-  Future<void> _fetchDaftarSiswa() async {
+  Future<void> _fetchSiswa() async {
     setState(() => _isLoading = true);
     try {
       final res = await _supabase
           .from('profiles')
-          .select('id, full_name, nisn, kelas')
+          .select('*')
           .eq('role', 'siswa')
-          .order('kelas', ascending: true)
           .order('full_name', ascending: true);
-
-      setState(() {
-        _listSiswa = List<Map<String, dynamic>>.from(res);
-        _filteredSiswa = _listSiswa;
-        _isLoading = false;
-      });
+      
+      if (mounted) {
+        setState(() {
+          _listSiswa = List<Map<String, dynamic>>.from(res);
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _filterPencarian(String query) {
-    if (query.isEmpty) {
-      setState(() => _filteredSiswa = _listSiswa);
-      return;
+  @override
+  Widget build(BuildContext context) {
+    // 1. Filter Pencarian
+    List<Map<String, dynamic>> filteredSiswa = _listSiswa.where((u) {
+      if (_searchQuery.isEmpty) return true;
+      final nama = (u['full_name'] ?? '').toString().toLowerCase();
+      final kelas = (u['kelas'] ?? '').toString().toLowerCase();
+      final nisn = (u['nisn'] ?? '').toString().toLowerCase();
+      return nama.contains(_searchQuery) || kelas.contains(_searchQuery) || nisn.contains(_searchQuery);
+    }).toList();
+
+    // 2. Kelompokkan Berdasarkan Kelas (Folder)
+    Map<String, List<Map<String, dynamic>>> groupedByKelas = {};
+    for (var s in filteredSiswa) {
+      final k = s['kelas'] ?? 'Tanpa Kelas';
+      if (!groupedByKelas.containsKey(k)) groupedByKelas[k] = [];
+      groupedByKelas[k]!.add(s);
     }
-    setState(() {
-      _filteredSiswa = _listSiswa.where((siswa) {
-        final nama = (siswa['full_name'] ?? '').toLowerCase();
-        final kelas = (siswa['kelas'] ?? '').toLowerCase();
-        final nisn = (siswa['nisn'] ?? '').toLowerCase();
-        return nama.contains(query.toLowerCase()) || kelas.contains(query.toLowerCase()) || nisn.contains(query.toLowerCase());
-      }).toList();
-    });
+
+    final sortedKelas = groupedByKelas.keys.toList()..sort();
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        title: const Text('Administrasi & Keuangan', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white, elevation: 0.5,
+        leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.black), onPressed: () => Navigator.pop(context)),
+      ),
+      body: Column(
+        children: [
+          // PANEL PENCARIAN
+          Container(
+            padding: const EdgeInsets.all(16), color: Colors.white,
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: 'Cari Nama, Kelas, atau NISN...', prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                filled: true, fillColor: const Color(0xFFF1F5F9),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+              ),
+              onChanged: (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
+            ),
+          ),
+
+          // LIST FOLDER KELAS
+          Expanded(
+            child: _isLoading ? const Center(child: CircularProgressIndicator(color: Colors.teal))
+                : sortedKelas.isEmpty ? const Center(child: Text('Data siswa tidak ditemukan', style: TextStyle(color: Colors.grey)))
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16), itemCount: sortedKelas.length,
+                        itemBuilder: (context, index) {
+                          final kelas = sortedKelas[index];
+                          final listSiswaKelas = groupedByKelas[kelas]!;
+
+                          return Card(
+                            elevation: 0, margin: const EdgeInsets.only(bottom: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade300)),
+                            child: ExpansionTile(
+                              leading: const Icon(Icons.folder_shared_rounded, color: Colors.teal, size: 36),
+                              title: Text('Kelas $kelas', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
+                              subtitle: Text('${listSiswaKelas.length} Siswa terdaftar', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                              children: listSiswaKelas.map((siswa) {
+                                return Container(
+                                  decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.shade200))),
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                                    leading: const CircleAvatar(backgroundColor: Color(0xFFE6FFFA), child: Icon(Icons.person, color: Colors.teal)),
+                                    title: Text(siswa['full_name'] ?? 'Tanpa Nama', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                    subtitle: Text('NISN: ${siswa['nisn'] ?? '-'}', style: const TextStyle(fontSize: 12)),
+                                    trailing: ElevatedButton(
+                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                                      onPressed: () {
+                                        Navigator.push(context, MaterialPageRoute(builder: (context) => DetailKeuanganSiswaScreen(siswaData: siswa)));
+                                      },
+                                      child: const Text('Keuangan', style: TextStyle(fontWeight: FontWeight.bold)),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =========================================================================
+// 🔥 HALAMAN: DETAIL RIWAYAT & INPUT PEMBAYARAN PER SISWA
+// =========================================================================
+class DetailKeuanganSiswaScreen extends StatefulWidget {
+  final Map<String, dynamic> siswaData;
+  const DetailKeuanganSiswaScreen({super.key, required this.siswaData});
+
+  @override
+  State<DetailKeuanganSiswaScreen> createState() => _DetailKeuanganSiswaScreenState();
+}
+
+class _DetailKeuanganSiswaScreenState extends State<DetailKeuanganSiswaScreen> {
+  final _supabase = Supabase.instance.client;
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _riwayatBayar = [];
+
+  // DATABASE HARGA OTOMATIS
+  final Map<String, String> _hargaTagihan = {
+    'SPP Bulanan': '250000',
+    'Daftar Ulang': '1500000',
+    'PTS-1': '150000',
+    'PAS-1': '200000',
+    'LKS': '120000',
+    'Seragam': '850000',
+    'Kegiatan PKL': '300000',
+    'Lainnya': '0'
+  };
+
+  final List<String> _listBulan = ['-', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRiwayat();
   }
 
-  void _showFormInputPembayaran(Map<String, dynamic> siswa) {
-    final _formKey = GlobalKey<FormState>();
-    final _nominalController = TextEditingController();
-    final _keteranganController = TextEditingController();
-    
-    String _jenisSelected = 'SPP Bulanan';
-    String? _bulanSelected = 'Juli';
+  Future<void> _fetchRiwayat() async {
+    setState(() => _isLoading = true);
+    try {
+      final res = await _supabase
+          .from('pembayaran')
+          .select('*')
+          .eq('siswa_id', widget.siswaData['id'])
+          .order('created_at', ascending: false);
 
-    final List<String> jenisPembayaran = ['SPP Bulanan', 'Daftar Ulang', 'PTS-1', 'PAS-1', 'PTS-2', 'PAS-2', 'LKS', 'Seragam', 'Kegiatan PKL', 'Lainnya'];
-    final List<String> bulan = ['Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni'];
+      if (mounted) {
+        setState(() {
+          _riwayatBayar = List<Map<String, dynamic>>.from(res);
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
-    showModalBottomSheet(
+  void _bukaDialogInputBayar() {
+    String selectedJenis = 'SPP Bulanan';
+    String selectedBulan = '-'; 
+    final nominalCtrl = TextEditingController(text: _hargaTagihan['SPP Bulanan']);
+    final keteranganCtrl = TextEditingController();
+
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      barrierDismissible: false,
       builder: (context) {
         return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 24, right: 24, top: 24),
-              child: Form(
-                key: _formKey,
+          builder: (context, setStateDialog) {
+            bool isSPP = selectedJenis.contains('SPP');
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.account_balance_wallet, color: Colors.teal),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('Input Bayar: ${widget.siswaData['full_name']}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold))),
+                ],
+              ),
+              content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Input Pembayaran: ${siswa['full_name']}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal)),
-                    Text('Kelas: ${siswa['kelas']} | NISN: ${siswa['nisn']}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                    const SizedBox(height: 20),
-
+                    const Text('Jenis Tagihan', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                    const SizedBox(height: 4),
                     DropdownButtonFormField<String>(
-                      value: _jenisSelected,
-                      decoration: const InputDecoration(labelText: 'Jenis Pembayaran', border: OutlineInputBorder()),
-                      items: jenisPembayaran.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                      value: selectedJenis, decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+                      items: _hargaTagihan.keys.map((k) => DropdownMenuItem(value: k, child: Text(k, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
                       onChanged: (val) {
-                        setModalState(() {
-                          _jenisSelected = val!;
-                          if (_jenisSelected != 'SPP Bulanan') _bulanSelected = null;
-                          if (_jenisSelected == 'SPP Bulanan') _bulanSelected = 'Juli';
-                        });
+                        if (val != null) {
+                          setStateDialog(() {
+                            selectedJenis = val;
+                            nominalCtrl.text = _hargaTagihan[val]!;
+                            if (!val.contains('SPP')) selectedBulan = '-'; 
+                          });
+                        }
                       },
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
-                    if (_jenisSelected == 'SPP Bulanan') ...[
+                    if (isSPP) ...[
+                      const Text('Pembayaran Untuk Bulan', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      const SizedBox(height: 4),
                       DropdownButtonFormField<String>(
-                        value: _bulanSelected,
-                        decoration: const InputDecoration(labelText: 'Bulan Tagihan', border: OutlineInputBorder()),
-                        items: bulan.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                        onChanged: (val) => setModalState(() => _bulanSelected = val),
+                        value: selectedBulan, decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+                        items: _listBulan.map((b) => DropdownMenuItem(value: b, child: Text(b))).toList(),
+                        onChanged: (val) { if (val != null) setStateDialog(() => selectedBulan = val); },
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
                     ],
 
-                    TextFormField(
-                      controller: _nominalController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Nominal Rupiah (Rp)', border: OutlineInputBorder(), hintText: 'Contoh: 250000', prefixText: 'Rp '),
-                      validator: (val) => val == null || val.isEmpty ? 'Nominal wajib diisi' : null,
+                    const Text('Nominal (Rp)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: nominalCtrl, keyboardType: TextInputType.number,
+                      decoration: InputDecoration(prefixText: 'Rp ', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
                     ),
-                    const SizedBox(height: 16),
-                    
-                    TextFormField(
-                      controller: _keteranganController,
-                      decoration: const InputDecoration(labelText: 'Keterangan Tambahan (Opsional)', border: OutlineInputBorder(), hintText: 'Cth: Lunas / Cicil 1'),
-                    ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 12),
 
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.teal.shade700, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                        onPressed: () async {
-                          if (_formKey.currentState!.validate()) {
-                            Navigator.pop(context); 
-                            _prosesSimpanPembayaran(siswa['id'], _jenisSelected, _bulanSelected, _nominalController.text, _keteranganController.text);
-                          }
-                        },
-                        child: const Text('SIMPAN TRANSAKSI', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
+                    const Text('Keterangan Tambahan (Opsional)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: keteranganCtrl,
+                      decoration: InputDecoration(hintText: 'Cth: Lunas via Transfer BCA', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
                     ),
-                    const SizedBox(height: 24),
                   ],
                 ),
               ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  onPressed: () async {
+                    if (nominalCtrl.text.isEmpty) return;
+
+                    String tagihanFinal = selectedBulan != '-' ? 'Bulan $selectedBulan' : '';
+                    if (keteranganCtrl.text.isNotEmpty) {
+                      tagihanFinal += tagihanFinal.isNotEmpty ? ' - ${keteranganCtrl.text}' : keteranganCtrl.text;
+                    }
+                    if (tagihanFinal.isEmpty) tagihanFinal = '-';
+
+                    Navigator.pop(context); // Tutup dialog
+                    _prosesSimpanPembayaran(selectedJenis, nominalCtrl.text, tagihanFinal);
+                  },
+                  child: const Text('Simpan Pembayaran', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ],
             );
-          },
+          }
         );
-      },
+      }
     );
   }
 
-  Future<void> _prosesSimpanPembayaran(String siswaId, String jenis, String? bulan, String nominalStr, String keterangan) async {
+  Future<void> _prosesSimpanPembayaran(String jenis, String nominalStr, String keterangan) async {
     setState(() => _isLoading = true);
     try {
-      final user = _supabase.auth.currentUser;
-      final tuProfile = await _supabase.from('profiles').select('full_name').eq('id', user!.id).single();
-      
-      final tanggalNow = DateFormat('dd MMMM yyyy HH:mm').format(DateTime.now());
+      // Membersihkan titik atau koma jika user tidak sengaja mengetiknya (misal: 250.000)
+      String nominalBersih = nominalStr.replaceAll(RegExp(r'[^0-9]'), '');
 
+      // 🔥 INI BAGIAN KUNCI: MENGIRIM 'status': 'LUNAS' SECARA MUTLAK
       await _supabase.from('pembayaran').insert({
-        'siswa_id': siswaId,
-        'tanggal_bayar': tanggalNow,
+        'siswa_id': widget.siswaData['id'],
         'jenis_pembayaran': jenis,
-        'bulan_tagihan': bulan,
-        'nominal': int.parse(nominalStr.replaceAll(RegExp(r'[^0-9]'), '')),
-        'keterangan': keterangan,
-        'penerima': tuProfile['full_name'] ?? 'Staff TU',
+        'bulan_tagihan': keterangan,
+        'nominal': double.parse(nominalBersih),
+        'status': 'LUNAS', // PASTIKAN BARIS INI ADA
+        'tanggal_bayar': DateTime.now().toIso8601String() 
       });
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transaksi pembayaran berhasil disimpan.'), backgroundColor: Colors.green));
+      
+      _fetchRiwayat();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pembayaran Lunas Tersimpan!'), backgroundColor: Colors.green));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan transaksi: $e'), backgroundColor: Colors.red));
-    } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      }
     }
   }
 
@@ -182,49 +315,108 @@ class _AdminAdministrasiScreenState extends State<AdminAdministrasiScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        title: const Text('Administrasi & Keuangan', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
-        backgroundColor: Colors.white, elevation: 0.5,
-        leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.black), onPressed: () => Navigator.pop(context)),
+      appBar: AppBar(title: const Text('Detail Keuangan Siswa', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)), backgroundColor: Colors.white, elevation: 0.5, iconTheme: const IconThemeData(color: Colors.black)),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: Colors.teal, icon: const Icon(Icons.add_card, color: Colors.white),
+        label: const Text('Input Pembayaran', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        onPressed: _bukaDialogInputBayar,
       ),
       body: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(16), color: Colors.white,
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Cari nama atau kelas siswa...', prefixIcon: const Icon(Icons.search_rounded),
-                filled: true, fillColor: const Color(0xFFF1F5F9), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              onChanged: _filterPencarian,
+            padding: const EdgeInsets.all(20), width: double.infinity,
+            decoration: const BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0)))),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const CircleAvatar(radius: 24, backgroundColor: Color(0xFFE6FFFA), child: Icon(Icons.person, color: Colors.teal, size: 28)),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(widget.siswaData['full_name'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                          const SizedBox(height: 4),
+                          Text('NISN: ${widget.siswaData['nisn']} | Kelas: ${widget.siswaData['kelas']}', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: Colors.teal))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _filteredSiswa.length,
-                    itemBuilder: (context, index) {
-                      final s = _filteredSiswa[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 12), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade200)),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          leading: const CircleAvatar(backgroundColor: Color(0xFFE0F2FE), child: Icon(Icons.person, color: Color(0xFF0284C7))),
-                          title: Text(s['full_name'] ?? '-', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                          subtitle: Text('Kelas: ${s['kelas']} | NISN: ${s['nisn']}'),
-                          trailing: ElevatedButton(
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal.shade600, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                            onPressed: () => _showFormInputPembayaran(s),
-                            child: const Text('Input Bayar'),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+          
+          Container(
+            padding: const EdgeInsets.only(left: 20, top: 20, right: 20, bottom: 8), alignment: Alignment.centerLeft,
+            child: const Text('Riwayat Pembayaran & Bukti', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A))),
           ),
+          
+          Expanded(
+            child: _isLoading ? const Center(child: CircularProgressIndicator(color: Colors.teal))
+              : _riwayatBayar.isEmpty ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.receipt_long, size: 64, color: Colors.grey.shade300),
+                      const SizedBox(height: 16),
+                      const Text('Belum ada riwayat pembayaran.', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  itemCount: _riwayatBayar.length,
+                  itemBuilder: (context, index) {
+                    final bayar = _riwayatBayar[index];
+                    final formatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+                    
+                    // 🔥 SISTEM PELINDUNG DATE PARSING PINTAR
+                    String rawDate = bayar['tanggal_bayar'] ?? bayar['created_at'] ?? '';
+                    String tanggalTampil = rawDate; 
+                    try {
+                      DateTime parsed = DateTime.parse(rawDate).toLocal();
+                      tanggalTampil = DateFormat('dd MMM yyyy, HH:mm').format(parsed);
+                    } catch (e) {
+                      // Mengabaikan error format lama dan membiarkannya tampil apa adanya
+                    }
+
+                    return Card(
+                      elevation: 0, margin: const EdgeInsets.only(bottom: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade300)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(6)), child: const Text('LUNAS', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 10))),
+                                Text(tanggalTampil, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Text(bayar['jenis_pembayaran'] ?? '-', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A))),
+                            const SizedBox(height: 4),
+                            Text(formatter.format(bayar['nominal'] ?? 0), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal)),
+                            const Divider(height: 24),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.info_outline, size: 14, color: Colors.grey),
+                                const SizedBox(width: 8),
+                                Expanded(child: Text(bayar['bulan_tagihan']?.toString().replaceAll('-', 'Tanpa Keterangan') ?? '', style: const TextStyle(fontSize: 12, color: Colors.grey))),
+                              ],
+                            )
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+          )
         ],
       ),
     );
