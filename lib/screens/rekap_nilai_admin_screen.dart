@@ -66,12 +66,52 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
     }
   }
 
-  // EXPORT EXCEL MASAL
+  // ==============================================================
+  // 🔥 PERBAIKAN: EXPORT EXCEL DENGAN GROUPING KATEGORI NILAI
+  // ==============================================================
   Future<void> _exportExcelSatuKelas() async {
     if (_selectedKelas == null) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Menyiapkan file Excel...'), backgroundColor: Colors.blue));
+    
     try {
-      final resNilai = await _supabase.from('nilai').select('*, siswa:profiles!nilai_siswa_id_fkey(full_name, nisn)').eq('kelas', _selectedKelas!);
+      // Ambil id siswa dari kelas yang dipilih
+      final resSiswa = await _supabase.from('profiles').select('id, full_name, nisn').eq('role', 'siswa').eq('kelas', _selectedKelas!);
+      List<String> listIdSiswa = resSiswa.map((e) => e['id'].toString()).toList();
+
+      if(listIdSiswa.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tidak ada siswa di kelas ini'), backgroundColor: Colors.orange));
+        return;
+      }
+
+      // Ambil semua nilai berdasarkan ID siswa
+      final resNilai = await _supabase.from('nilai').select('*').filter('siswa_id', 'in', listIdSiswa);
+
+      // Kelompokkan data per Siswa dan per Mapel
+      Map<String, Map<String, dynamic>> rekapData = {};
+      for (var item in resNilai) {
+        String sId = item['siswa_id'].toString();
+        String mapel = item['mapel'] ?? '-';
+        String key = "${sId}_$mapel";
+
+        if(!rekapData.containsKey(key)) {
+          var dataSiswa = resSiswa.firstWhere((s) => s['id'].toString() == sId, orElse: () => {'full_name': '-', 'nisn': '-'});
+          rekapData[key] = {
+            'nama': dataSiswa['full_name'] ?? '-',
+            'nisn': dataSiswa['nisn'] ?? '-',
+            'mapel': mapel,
+            'tugas': 0.0,
+            'uts': 0.0,
+            'uas': 0.0
+          };
+        }
+
+        String kategori = (item['kategori'] ?? '').toString().toLowerCase();
+        double nilai = double.tryParse(item['nilai']?.toString() ?? '0') ?? 0;
+
+        if (kategori.contains('tugas')) rekapData[key]!['tugas'] = nilai;
+        else if (kategori.contains('uts') || kategori.contains('pts')) rekapData[key]!['uts'] = nilai;
+        else if (kategori.contains('uas') || kategori.contains('pas')) rekapData[key]!['uas'] = nilai;
+      }
       
       var excel = Excel.createExcel();
       Sheet sheetObject = excel['Rekap_Kelas_$_selectedKelas'];
@@ -81,19 +121,18 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
       sheetObject.appendRow([TextCellValue('')]);
       sheetObject.appendRow([TextCellValue('Nama Siswa'), TextCellValue('NISN'), TextCellValue('Mapel'), TextCellValue('Tugas'), TextCellValue('UTS'), TextCellValue('UAS'), TextCellValue('Nilai Akhir')]);
 
-      for (var n in resNilai) {
-        double tugas = double.tryParse(n['nilai_tugas']?.toString() ?? '0') ?? 0;
-        double uts = double.tryParse(n['nilai_uts']?.toString() ?? '0') ?? 0;
-        double uas = double.tryParse(n['nilai_uas']?.toString() ?? '0') ?? 0;
-        
-        double akhir = double.tryParse(n['nilai_akhir']?.toString() ?? '0') ?? 0;
-        if (akhir == 0) { akhir = (tugas * 0.3) + (uts * 0.3) + (uas * 0.4); } 
+      // Masukkan data ke format baris
+      rekapData.values.forEach((n) {
+        double tugas = n['tugas'];
+        double uts = n['uts'];
+        double uas = n['uas'];
+        double akhir = (tugas * 0.3) + (uts * 0.3) + (uas * 0.4);
 
         sheetObject.appendRow([
-          TextCellValue(n['siswa']?['full_name'] ?? '-'), TextCellValue(n['siswa']?['nisn'] ?? '-'), TextCellValue(n['mapel'] ?? '-'),
-          DoubleCellValue(tugas), DoubleCellValue(uts), DoubleCellValue(uas), DoubleCellValue(akhir),
+          TextCellValue(n['nama']), TextCellValue(n['nisn']), TextCellValue(n['mapel']),
+          DoubleCellValue(tugas), DoubleCellValue(uts), DoubleCellValue(uas), DoubleCellValue(double.parse(akhir.toStringAsFixed(1))),
         ]);
-      }
+      });
 
       Directory dir = await getApplicationDocumentsDirectory();
       String path = '${dir.path}/Rekap_Nilai_Kelas_$_selectedKelas.xlsx';
@@ -186,29 +225,53 @@ class _RaporDetailScreenState extends State<RaporDetailScreen> {
   @override
   void initState() { super.initState(); _fetchNilaiSiswa(); }
 
+  // ==============================================================
+  // 🔥 PERBAIKAN: GROUPING DATA MATA PELAJARAN DI E-RAPOR PDF
+  // ==============================================================
   Future<void> _fetchNilaiSiswa() async {
     final res = await _supabase.from('nilai').select('*').eq('siswa_id', widget.idSiswa);
     
-    List<Map<String, dynamic>> cleanedData = [];
-    for(var item in res) {
-      double tugas = double.tryParse(item['nilai_tugas']?.toString() ?? '0') ?? 0;
-      double uts = double.tryParse(item['nilai_uts']?.toString() ?? '0') ?? 0;
-      double uas = double.tryParse(item['nilai_uas']?.toString() ?? '0') ?? 0;
-      
-      double akhir = double.tryParse(item['nilai_akhir']?.toString() ?? '0') ?? 0;
-      if(akhir == 0) akhir = (tugas * 0.3) + (uts * 0.3) + (uas * 0.4);
+    Map<String, Map<String, dynamic>> mapelData = {};
 
+    for(var item in res) {
+      String mapel = item['mapel'] ?? '-';
+      String kategori = (item['kategori'] ?? '').toString().toLowerCase();
+      double nilai = double.tryParse(item['nilai']?.toString() ?? '0') ?? 0;
+
+      if (!mapelData.containsKey(mapel)) {
+        mapelData[mapel] = {'tugas': 0.0, 'uts': 0.0, 'uas': 0.0};
+      }
+
+      // Memilah nilai masuk ke kantong yang mana
+      if (kategori.contains('tugas')) {
+        mapelData[mapel]!['tugas'] = nilai;
+      } else if (kategori.contains('uts') || kategori.contains('pts')) {
+        mapelData[mapel]!['uts'] = nilai;
+      } else if (kategori.contains('uas') || kategori.contains('pas')) {
+        mapelData[mapel]!['uas'] = nilai;
+      }
+    }
+
+    List<Map<String, dynamic>> cleanedData = [];
+    
+    mapelData.forEach((mapel, scores) {
+      double tugas = scores['tugas'];
+      double uts = scores['uts'];
+      double uas = scores['uas'];
+      
+      // Rumus Penilaian
+      double akhir = (tugas * 0.3) + (uts * 0.3) + (uas * 0.4);
       String predikat = akhir >= 90 ? 'A' : akhir >= 80 ? 'B' : akhir >= 70 ? 'C' : 'D';
 
       cleanedData.add({
-        'mapel': item['mapel'] ?? '-',
+        'mapel': mapel,
         'tugas': tugas.toStringAsFixed(0),
         'uts': uts.toStringAsFixed(0),
         'uas': uas.toStringAsFixed(0),
         'akhir': akhir.toStringAsFixed(1),
         'predikat': predikat
       });
-    }
+    });
 
     setState(() { _nilaiData = cleanedData; _isLoading = false; });
   }
@@ -263,7 +326,7 @@ class _RaporDetailScreenState extends State<RaporDetailScreen> {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
-                  border: TableBorder.all(color: Colors.grey.shade400), headingRowColor: MaterialStateProperty.all(Colors.blue.shade50),
+                  border: TableBorder.all(color: Colors.grey.shade400), headingRowColor: WidgetStateProperty.all(Colors.blue.shade50),
                   columns: const [
                     DataColumn(label: Text('Mata Pelajaran', style: TextStyle(fontWeight: FontWeight.bold))),
                     DataColumn(label: Text('Tugas')), DataColumn(label: Text('UTS')), DataColumn(label: Text('UAS')),
