@@ -146,6 +146,18 @@ class _DetailKeuanganSiswaScreenState extends State<DetailKeuanganSiswaScreen> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _riwayatBayar = [];
 
+  // DAFTAR KATEGORI FOLDER PEMBAYARAN (Sesuai Urutan)
+  final List<String> _kategoriFolder = [
+    'SPP Bulanan',
+    'Daftar Ulang',
+    'PTS-1',
+    'PAS-1',
+    'LKS',
+    'Seragam',
+    'Kegiatan PKL',
+    'Lainnya'
+  ];
+
   // DATABASE HARGA OTOMATIS
   final Map<String, String> _hargaTagihan = {
     'SPP Bulanan': '250000',
@@ -288,17 +300,18 @@ class _DetailKeuanganSiswaScreenState extends State<DetailKeuanganSiswaScreen> {
   Future<void> _prosesSimpanPembayaran(String jenis, String nominalStr, String keterangan) async {
     setState(() => _isLoading = true);
     try {
-      // Membersihkan titik atau koma jika user tidak sengaja mengetiknya (misal: 250.000)
       String nominalBersih = nominalStr.replaceAll(RegExp(r'[^0-9]'), '');
+      final user = _supabase.auth.currentUser;
+      final emailPenerima = user?.email ?? 'Admin / TU';
 
-      // 🔥 INI BAGIAN KUNCI: MENGIRIM 'status': 'LUNAS' SECARA MUTLAK
       await _supabase.from('pembayaran').insert({
         'siswa_id': widget.siswaData['id'],
         'jenis_pembayaran': jenis,
         'bulan_tagihan': keterangan,
-        'nominal': double.parse(nominalBersih),
-        'status': 'LUNAS', // PASTIKAN BARIS INI ADA
-        'tanggal_bayar': DateTime.now().toIso8601String() 
+        'nominal': int.parse(nominalBersih), 
+        'status': 'LUNAS',
+        'tanggal_bayar': DateTime.now().toIso8601String(),
+        'penerima': emailPenerima 
       });
       
       _fetchRiwayat();
@@ -313,6 +326,16 @@ class _DetailKeuanganSiswaScreenState extends State<DetailKeuanganSiswaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 1. KELOMPOKKAN RIWAYAT BERDASARKAN JENIS PEMBAYARAN (FOLDER)
+    Map<String, List<Map<String, dynamic>>> groupedRiwayat = {};
+    for (var bayar in _riwayatBayar) {
+      final jenis = bayar['jenis_pembayaran'] ?? 'Lainnya';
+      if (!groupedRiwayat.containsKey(jenis)) {
+        groupedRiwayat[jenis] = [];
+      }
+      groupedRiwayat[jenis]!.add(bayar);
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(title: const Text('Detail Keuangan Siswa', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)), backgroundColor: Colors.white, elevation: 0.5, iconTheme: const IconThemeData(color: Colors.black)),
@@ -351,67 +374,86 @@ class _DetailKeuanganSiswaScreenState extends State<DetailKeuanganSiswaScreen> {
           
           Container(
             padding: const EdgeInsets.only(left: 20, top: 20, right: 20, bottom: 8), alignment: Alignment.centerLeft,
-            child: const Text('Riwayat Pembayaran & Bukti', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A))),
+            child: const Text('Folder Riwayat Pembayaran', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A))),
           ),
           
           Expanded(
             child: _isLoading ? const Center(child: CircularProgressIndicator(color: Colors.teal))
-              : _riwayatBayar.isEmpty ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.receipt_long, size: 64, color: Colors.grey.shade300),
-                      const SizedBox(height: 16),
-                      const Text('Belum ada riwayat pembayaran.', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                )
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  itemCount: _riwayatBayar.length,
+                  itemCount: _kategoriFolder.length, // Menampilkan folder sesuai urutan _kategoriFolder
                   itemBuilder: (context, index) {
-                    final bayar = _riwayatBayar[index];
+                    final namaKategori = _kategoriFolder[index];
+                    final listBayarKategori = groupedRiwayat[namaKategori] ?? [];
                     final formatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
-                    
-                    // 🔥 SISTEM PELINDUNG DATE PARSING PINTAR
-                    String rawDate = bayar['tanggal_bayar'] ?? bayar['created_at'] ?? '';
-                    String tanggalTampil = rawDate; 
-                    try {
-                      DateTime parsed = DateTime.parse(rawDate).toLocal();
-                      tanggalTampil = DateFormat('dd MMM yyyy, HH:mm').format(parsed);
-                    } catch (e) {
-                      // Mengabaikan error format lama dan membiarkannya tampil apa adanya
+
+                    // Hitung total nominal per folder
+                    double totalMasuk = 0;
+                    for (var b in listBayarKategori) {
+                      totalMasuk += (b['nominal'] ?? 0);
                     }
 
                     return Card(
-                      elevation: 0, margin: const EdgeInsets.only(bottom: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade300)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(6)), child: const Text('LUNAS', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 10))),
-                                Text(tanggalTampil, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Text(bayar['jenis_pembayaran'] ?? '-', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A))),
-                            const SizedBox(height: 4),
-                            Text(formatter.format(bayar['nominal'] ?? 0), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal)),
-                            const Divider(height: 24),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Icon(Icons.info_outline, size: 14, color: Colors.grey),
-                                const SizedBox(width: 8),
-                                Expanded(child: Text(bayar['bulan_tagihan']?.toString().replaceAll('-', 'Tanpa Keterangan') ?? '', style: const TextStyle(fontSize: 12, color: Colors.grey))),
-                              ],
-                            )
-                          ],
-                        ),
+                      elevation: 0, 
+                      margin: const EdgeInsets.only(bottom: 12), 
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade300)),
+                      child: ExpansionTile(
+                        leading: const Icon(Icons.folder, color: Colors.amber, size: 36),
+                        title: Text(namaKategori, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
+                        subtitle: Text('${listBayarKategori.length} Transaksi | Total: ${formatter.format(totalMasuk)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        children: listBayarKategori.isEmpty
+                          ? [
+                              const Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Text('Belum ada data pembayaran di kategori ini.', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
+                              )
+                            ]
+                          : listBayarKategori.map((bayar) {
+                              
+                              String rawDate = bayar['tanggal_bayar'] ?? bayar['created_at'] ?? '';
+                              String tanggalTampil = rawDate; 
+                              try {
+                                DateTime parsed = DateTime.parse(rawDate).toLocal();
+                                tanggalTampil = DateFormat('dd MMM yyyy, HH:mm').format(parsed);
+                              } catch (e) {}
+
+                              return Container(
+                                decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.shade200))),
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(6)), child: const Text('LUNAS', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 10))),
+                                        Text(tanggalTampil, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(formatter.format(bayar['nominal'] ?? 0), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal)),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(Icons.info_outline, size: 14, color: Colors.grey),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(bayar['bulan_tagihan']?.toString().replaceAll('-', 'Tanpa Keterangan') ?? '', style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                                              const SizedBox(height: 4),
+                                              Text('Diterima oleh: ${bayar['penerima'] ?? 'Admin'}', style: TextStyle(fontSize: 11, color: Colors.blue.shade700, fontWeight: FontWeight.bold)),
+                                            ],
+                                          )
+                                        ),
+                                      ],
+                                    )
+                                  ],
+                                ),
+                              );
+                            }).toList(),
                       ),
                     );
                   },
