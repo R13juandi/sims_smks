@@ -272,7 +272,8 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
         const Text('Pusat Kontrol Akses Akun', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
         const SizedBox(height: 14),
 
-        _buildMenuButton(Icons.supervised_user_circle_rounded, 'Manajemen Database Pengguna', 'Tambah, Edit profil, Hapus, & Reset Sandi', const Color(0xFF0F172A), () => Navigator.push(context, MaterialPageRoute(builder: (context) => ManajemenUserScreen(currentUserRole: _currentUserRole)))),
+        // 🔥 PERBAIKAN: Parameter `currentUserRole` sudah dihapus dari sini.
+        _buildMenuButton(Icons.supervised_user_circle_rounded, 'Manajemen Database Pengguna', 'Tambah, Edit profil, Hapus, & Reset Sandi', const Color(0xFF0F172A), () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ManajemenUserScreen()))),
         const SizedBox(height: 12),
 
         if (!_currentUserRole.contains('kepsek')) ...[
