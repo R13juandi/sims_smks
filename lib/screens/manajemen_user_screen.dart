@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'detail_user_screen.dart';
 import 'tambah_user_screen.dart';
 
 class ManajemenUserScreen extends StatefulWidget {
-  const ManajemenUserScreen({super.key});
+  final String currentUserRole; // Diterima dari dashboard
+  const ManajemenUserScreen({super.key, this.currentUserRole = 'admin'});
 
   @override
   State<ManajemenUserScreen> createState() => _ManajemenUserScreenState();
@@ -17,7 +17,6 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
   String _searchQuery = '';
   bool _isLoading = false;
   List<dynamic> _allUsers = [];
-  final List<String> _listKelasFolder = ['X TKJ', 'XI TKJ', 'XII TKJ'];
 
   @override
   void initState() {
@@ -26,63 +25,132 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
     _fetchUsers();
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    _searchController.dispose();
-    super.dispose();
-  }
-
   Future<void> _fetchUsers() async {
     setState(() => _isLoading = true);
     try {
       final data = await _supabase.from('profiles').select('*').order('full_name', ascending: true);
       setState(() { _allUsers = data; });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal mengambil data: $e'), backgroundColor: Colors.red));
-    } finally {
-      setState(() => _isLoading = false);
-    }
+    } catch (e) {} finally { setState(() => _isLoading = false); }
   }
 
-  List<dynamic> _filterUsersByRoleAndSearch(String role) {
-    return _allUsers.where((user) {
-      final userRole = (user['role'] ?? '').toString().toLowerCase();
-      if (userRole != role) return false;
-      if (_searchQuery.isEmpty) return true;
-      final name = (user['full_name'] ?? '').toString().toLowerCase();
-      final kelas = (user['kelas'] ?? '').toString().toLowerCase();
-      final nisn = (user['nisn'] ?? '').toString().toLowerCase();
-      return name.contains(_searchQuery) || kelas.contains(_searchQuery) || nisn.contains(_searchQuery);
-    }).toList();
+  void _showEditDialog(Map<String, dynamic> user) {
+    if (widget.currentUserRole == 'kepsek') return; // PROTEKSI KEPSEK
+
+    final namaCtrl = TextEditingController(text: user['full_name']);
+    final nisnCtrl = TextEditingController(text: user['nisn'] ?? '');
+    final kelasCtrl = TextEditingController(text: user['kelas'] ?? '');
+    String roleValue = user['role'] ?? 'siswa';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Akun & Sandi', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: namaCtrl, decoration: const InputDecoration(labelText: 'Nama Lengkap')),
+              TextField(controller: nisnCtrl, decoration: const InputDecoration(labelText: 'NISN / NIP')),
+              TextField(controller: kelasCtrl, decoration: const InputDecoration(labelText: 'Kelas (Untuk Siswa)')),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: roleValue, decoration: const InputDecoration(labelText: 'Hak Akses (Role)'),
+                items: ['siswa', 'guru', 'admin', 'tata_usaha', 'kepsek'].map((r) => DropdownMenuItem(value: r, child: Text(r.toUpperCase()))).toList(),
+                onChanged: (val) { if (val != null) roleValue = val; },
+              ),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.orange.shade200)),
+                child: Column(
+                  children: [
+                    const Text('Lupa Password?', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange)),
+                    const SizedBox(height: 4),
+                    const Text('Kirim link pembuatan sandi baru ke email siswa.', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade700, foregroundColor: Colors.white),
+                      icon: const Icon(Icons.lock_reset, size: 18), label: const Text('Kirim Link Reset Sandi'),
+                      onPressed: () async {
+                        try {
+                          await _supabase.auth.resetPasswordForEmail(user['email'] ?? '');
+                          if (context.mounted) { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Terkirim ke Email!'), backgroundColor: Colors.green)); }
+                        } catch (e) {}
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E40AF), foregroundColor: Colors.white),
+            onPressed: () async {
+              try {
+                await _supabase.from('profiles').update({'full_name': namaCtrl.text, 'nisn': nisnCtrl.text, 'kelas': kelasCtrl.text, 'role': roleValue}).eq('id', user['id']);
+                if (context.mounted) { Navigator.pop(context); _fetchUsers(); }
+              } catch (e) {}
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(String id, String nama) {
+    if (widget.currentUserRole == 'kepsek') return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus Permanen?', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+        content: Text('Hapus $nama beserta seluruh nilainya?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () async {
+              try { await _supabase.from('profiles').delete().eq('id', id); if (context.mounted) { Navigator.pop(context); _fetchUsers(); } } catch (e) {}
+            },
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    // 1. FILTER BERDASARKAN PENCARIAN
+    List<dynamic> filtered = _allUsers.where((u) {
+      if (_searchQuery.isEmpty) return true;
+      final name = (u['full_name'] ?? '').toString().toLowerCase();
+      final kelas = (u['kelas'] ?? '').toString().toLowerCase();
+      return name.contains(_searchQuery) || kelas.contains(_searchQuery);
+    }).toList();
+
+    // 2. BAGI DUA (SISWA DAN STAF)
+    List<dynamic> listSiswa = filtered.where((u) => u['role'] == 'siswa').toList();
+    List<dynamic> listStaf = filtered.where((u) => u['role'] != 'siswa').toList();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Database Pengguna', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A))),
-            Text('Panel Hak Akses: Tata Usaha (TU)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF))),
-          ],
-        ),
+        title: const Text('Database Pengguna', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A))),
         backgroundColor: Colors.white, elevation: 0,
         bottom: TabBar(
-          controller: _tabController, labelColor: const Color(0xFF1E40AF), unselectedLabelColor: const Color(0xFF64748B), indicatorColor: const Color(0xFF1E40AF), labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-          tabs: const [Tab(icon: Icon(Icons.school_rounded), text: 'Folder Siswa'), Tab(icon: Icon(Icons.supervisor_account_rounded), text: 'Daftar Guru')],
+          controller: _tabController, labelColor: const Color(0xFF1E40AF), indicatorColor: const Color(0xFF1E40AF),
+          tabs: const [Tab(icon: Icon(Icons.school), text: 'Data Siswa'), Tab(icon: Icon(Icons.supervisor_account), text: 'Data Staf/Guru')],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      // SEMBUNYIKAN TOMBOL TAMBAH JIKA KEPSEK
+      floatingActionButton: widget.currentUserRole == 'kepsek' ? null : FloatingActionButton.extended(
         backgroundColor: const Color(0xFF1E40AF),
-        onPressed: () async {
-          final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const TambahUserScreen()));
-          if (result == true) _fetchUsers();
-        },
-        icon: const Icon(Icons.person_add_alt_1_rounded, color: Colors.white),
-        label: const Text('Tambah Pengguna', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        onPressed: () async { final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => TambahUserScreen())); if (result == true) _fetchUsers(); },
+        icon: const Icon(Icons.add, color: Colors.white), label: const Text('Tambah Baru', style: TextStyle(color: Colors.white)),
       ),
       body: Column(
         children: [
@@ -90,98 +158,49 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
             padding: const EdgeInsets.all(16), color: Colors.white,
             child: TextField(
               controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Cari nama, kelas, atau NISN...', prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF64748B)),
-                suffixIcon: _searchQuery.isNotEmpty ? IconButton(icon: const Icon(Icons.clear_rounded), onPressed: () { _searchController.clear(); setState(() => _searchQuery = ''); }) : null,
-                filled: true, fillColor: const Color(0xFFF1F5F9), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(vertical: 12),
-              ),
+              decoration: InputDecoration(hintText: 'Cari nama atau kelas...', prefixIcon: const Icon(Icons.search), filled: true, fillColor: const Color(0xFFF1F5F9), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)),
               onChanged: (val) { setState(() => _searchQuery = val.trim().toLowerCase()); },
             ),
           ),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E40AF)))
-                : TabBarView(controller: _tabController, children: [_buildTabSiswa(), _buildUserList('guru')]),
+            child: _isLoading ? const Center(child: CircularProgressIndicator())
+                : TabBarView(
+                    controller: _tabController,
+                    children: [
+                      // LIST SISWA
+                      ListView.builder(
+                        padding: const EdgeInsets.all(16), itemCount: listSiswa.length,
+                        itemBuilder: (c, i) => _buildUserCard(listSiswa[i], isKepsek: widget.currentUserRole == 'kepsek'),
+                      ),
+                      // LIST GURU/ADMIN
+                      ListView.builder(
+                        padding: const EdgeInsets.all(16), itemCount: listStaf.length,
+                        itemBuilder: (c, i) => _buildUserCard(listStaf[i], isKepsek: widget.currentUserRole == 'kepsek'),
+                      ),
+                    ],
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTabSiswa() {
-    if (_searchQuery.isNotEmpty) { return _buildUserList('siswa'); }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16), itemCount: _listKelasFolder.length,
-      itemBuilder: (context, index) {
-        final kelas = _listKelasFolder[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            leading: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.amber.withOpacity(0.2), shape: BoxShape.circle), child: const Icon(Icons.folder_rounded, color: Colors.amber)),
-            title: Text('Kelas $kelas', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A), fontSize: 15)), subtitle: const Text('Klik untuk melihat siswa', style: TextStyle(fontSize: 12)), trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF94A3B8)),
-            onTap: () async {
-              final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => FolderSiswaDetailScreen(kelas: kelas, allUsers: _allUsers)));
-              if (result == true) _fetchUsers();
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildUserList(String role) {
-    final filteredList = _filterUsersByRoleAndSearch(role);
-    if (filteredList.isEmpty) { return Center(child: Text('Tidak ada data ${role == 'siswa' ? 'Siswa' : 'Guru'} ditemukan', style: const TextStyle(color: Color(0xFF64748B)))); }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16), itemCount: filteredList.length,
-      itemBuilder: (context, index) {
-        final user = filteredList[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
-          child: ListTile(
-            leading: CircleAvatar(backgroundColor: role == 'siswa' ? const Color(0xFFDBEAFE) : const Color(0xFFDCEFDC), child: Icon(role == 'siswa' ? Icons.person : Icons.badge_rounded, color: role == 'siswa' ? const Color(0xFF1E40AF) : Colors.green[800])),
-            title: Text(user['full_name'] ?? '-', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A))), subtitle: Text(role == 'siswa' ? 'Kelas: ${user['kelas'] ?? '-'}' : 'Tenaga Pendidik / Guru', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))), trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF94A3B8)),
-            onTap: () async {
-              final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => DetailUserScreen(userData: user)));
-              if (result == true) _fetchUsers();
-            },
-          ),
-        );
-      },
-    );
-  }
-}
-
-class FolderSiswaDetailScreen extends StatelessWidget {
-  final String kelas;
-  final List<dynamic> allUsers;
-  const FolderSiswaDetailScreen({super.key, required this.kelas, required this.allUsers});
-
-  @override
-  Widget build(BuildContext context) {
-    final siswaDiKelas = allUsers.where((u) => u['role'] == 'siswa' && u['kelas'] == kelas).toList();
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(title: Text('Siswa $kelas', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black)), backgroundColor: Colors.white, iconTheme: const IconThemeData(color: Colors.black), elevation: 0.5),
-      body: siswaDiKelas.isEmpty
-          ? const Center(child: Text('Belum ada siswa terdaftar di kelas ini.', style: TextStyle(color: Colors.grey)))
-          : ListView.builder(
-              padding: const EdgeInsets.all(16), itemCount: siswaDiKelas.length,
-              itemBuilder: (context, index) {
-                final user = siswaDiKelas[index];
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
-                  child: ListTile(
-                    leading: const CircleAvatar(backgroundColor: Color(0xFFDBEAFE), child: Icon(Icons.person, color: Color(0xFF1E40AF))),
-                    title: Text(user['full_name'] ?? '-', style: const TextStyle(fontWeight: FontWeight.bold)), subtitle: Text('NISN: ${user['nisn'] ?? '-'}', style: const TextStyle(fontSize: 12)), trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF94A3B8)),
-                    onTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => DetailUserScreen(userData: user))).then((result) { if (result == true) Navigator.pop(context, true); });
-                    },
-                  ),
-                );
-              },
-            ),
+  Widget _buildUserCard(dynamic user, {required bool isKepsek}) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade300)),
+      child: ListTile(
+        leading: const CircleAvatar(backgroundColor: Color(0xFFDBEAFE), child: Icon(Icons.person, color: Color(0xFF1E40AF))),
+        title: Text(user['full_name'] ?? '-', style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text('Role: ${user['role'].toString().toUpperCase()}\nKelas/NIP: ${user['kelas'] ?? user['nisn'] ?? '-'}', style: const TextStyle(fontSize: 12)), 
+        // SEMBUNYIKAN TOMBOL EDIT/HAPUS JIKA KEPSEK
+        trailing: isKepsek ? null : Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () => _showEditDialog(user)),
+            IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _confirmDelete(user['id'], user['full_name'])),
+          ],
+        ),
+      ),
     );
   }
 }
