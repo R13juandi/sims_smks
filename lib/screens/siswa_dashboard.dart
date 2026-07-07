@@ -3,9 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import '../login_screen.dart';
 import 'absensi_siswa_screen.dart';
-import 'rekap_absensi_siswa_screen.dart';
 import 'nilai_rapor_screen.dart';
-import 'siswa_administrasi_screen.dart'; // 🔥 IMPORT HALAMAN TAGIHAN
+import 'siswa_administrasi_screen.dart'; 
 
 class SiswaDashboard extends StatefulWidget {
   const SiswaDashboard({super.key});
@@ -14,8 +13,7 @@ class SiswaDashboard extends StatefulWidget {
   State<SiswaDashboard> createState() => _SiswaDashboardState();
 }
 
-class _SiswaDashboardState extends State<SiswaDashboard>
-    with TickerProviderStateMixin {
+class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStateMixin {
   final _supabase = Supabase.instance.client;
   bool _isLoading = true;
 
@@ -48,10 +46,7 @@ class _SiswaDashboardState extends State<SiswaDashboard>
       if (user == null) return;
 
       final profileRes = await _supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
-
-      if (profileRes != null) {
-        _biodataSiswa = profileRes;
-      }
+      if (profileRes != null) _biodataSiswa = profileRes;
 
       final jadwalRes = await _supabase.from('jadwal').select('*').order('jam_mulai', ascending: true);
       final listJadwal = List<Map<String, dynamic>>.from(jadwalRes);
@@ -60,7 +55,6 @@ class _SiswaDashboardState extends State<SiswaDashboard>
       _allJadwal = listJadwal.where((j) {
         String kelasJadwal = (j['kelas'] ?? '').toString().toLowerCase().trim();
         if (kelasJadwal == kelasSiswa) return true;
-
         if (kelasSiswa.contains('10') || kelasSiswa.contains('x ')) {
           return kelasJadwal.contains('10') || kelasJadwal.contains('x');
         } else if (kelasSiswa.contains('11') || kelasSiswa.contains('xi')) {
@@ -83,10 +77,7 @@ class _SiswaDashboardState extends State<SiswaDashboard>
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        backgroundColor: Color(0xFFF8FAFC),
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF1E3A8A))),
-      );
+      return const Scaffold(backgroundColor: Color(0xFFF8FAFC), body: Center(child: CircularProgressIndicator(color: Color(0xFF1E3A8A))));
     }
 
     final hariIni = _getNamaHariIni();
@@ -98,17 +89,13 @@ class _SiswaDashboardState extends State<SiswaDashboard>
         backgroundColor: Colors.white, centerTitle: false, elevation: 0,
         actions: [
           Container(
-            margin: const EdgeInsets.only(right: 12),
-            decoration: BoxDecoration(color: Colors.red[50], shape: BoxShape.circle),
+            margin: const EdgeInsets.only(right: 12), decoration: BoxDecoration(color: Colors.red[50], shape: BoxShape.circle),
             child: IconButton(
-              icon: Icon(Icons.logout_rounded, color: Colors.red[600], size: 20),
-              tooltip: 'Keluar Aplikasi',
+              icon: Icon(Icons.logout_rounded, color: Colors.red[600], size: 20), tooltip: 'Keluar Aplikasi',
               onPressed: () async {
                 await _supabase.auth.signOut();
                 if (!mounted) return;
-                Navigator.pushAndRemoveUntil(
-                  context, MaterialPageRoute(builder: (context) => const LoginScreen()), (route) => false,
-                );
+                Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const LoginScreen()), (route) => false);
               },
             ),
           ),
@@ -120,9 +107,7 @@ class _SiswaDashboardState extends State<SiswaDashboard>
           Card(
             elevation: 8, shadowColor: const Color(0xFF1E3A8A).withOpacity(0.3), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)), clipBehavior: Clip.antiAlias,
             child: InkWell(
-              onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => DetailProfilSiswaScreen(biodata: _biodataSiswa)));
-              },
+              onTap: () { Navigator.push(context, MaterialPageRoute(builder: (context) => DetailProfilSiswaScreen(biodata: _biodataSiswa))); },
               child: Container(
                 width: double.infinity, padding: const EdgeInsets.all(24), decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
                 child: Row(
@@ -131,10 +116,8 @@ class _SiswaDashboardState extends State<SiswaDashboard>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Selamat Datang Kembali,', style: TextStyle(fontSize: 14, color: Colors.white70)),
-                          const SizedBox(height: 4),
-                          Text(_biodataSiswa['full_name'] ?? 'Siswa', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.5)),
-                          const SizedBox(height: 16),
+                          const Text('Selamat Datang Kembali,', style: TextStyle(fontSize: 14, color: Colors.white70)), const SizedBox(height: 4),
+                          Text(_biodataSiswa['full_name'] ?? 'Siswa', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.5)), const SizedBox(height: 16),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(30)),
                             child: Text('Kelas ${_biodataSiswa['kelas'] ?? '-'}  •  NISN ${_biodataSiswa['nisn'] ?? '-'}', style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w500)),
@@ -153,22 +136,18 @@ class _SiswaDashboardState extends State<SiswaDashboard>
           const Text('Menu Akademik', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
           const SizedBox(height: 16),
 
+          // 🔥 KINI MENJADI 4 MENU YANG SANGAT RAPI KARENA REKAP DIPINDAH KE DALAM PRESENSI
           GridView.count(
             crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 1.15,
             children: [
               _buildMenuCard(
-                icon: Icons.camera_front_rounded, color: const Color(0xFFEF4444), title: 'Presensi\n& Scan',
+                icon: Icons.camera_front_rounded, color: const Color(0xFFEF4444), title: 'Presensi\n& Rekap',
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AbsensiSiswaScreen())),
-              ),
-              _buildMenuCard(
-                icon: Icons.folder_shared_rounded, color: const Color(0xFF10B981), title: 'Rekap\nAbsensi',
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const RekapAbsensiSiswaScreen())),
               ),
               _buildMenuCard(
                 icon: Icons.analytics_rounded, color: const Color(0xFF3B82F6), title: 'Rapor\nSemester',
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => NilaiRaporScreen(siswaId: _supabase.auth.currentUser?.id ?? ''))),
               ),
-              // 🔥 MENU BARU UNTUK ADMINISTRASI PEMBAYARAN
               _buildMenuCard(
                 icon: Icons.account_balance_wallet_rounded, color: Colors.teal.shade600, title: 'Tagihan\n& SPP',
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SiswaAdministrasiScreen(siswaId: _supabase.auth.currentUser?.id ?? ''))),
@@ -189,7 +168,7 @@ class _SiswaDashboardState extends State<SiswaDashboard>
                   padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE2E8F0))),
                   child: const Column(
                     children: [
-                      Icon(Icons.auto_stories_outlined, size: 40, color: Color(0xFF94A3B8)), const SizedBox(height: 12),
+                      Icon(Icons.auto_stories_outlined, size: 40, color: Color(0xFF94A3B8)), SizedBox(height: 12),
                       Text('Tidak ada jadwal pelajaran aktif hari ini.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13, fontWeight: FontWeight.w500)),
                     ],
                   ),
@@ -245,6 +224,7 @@ class _SiswaDashboardState extends State<SiswaDashboard>
   }
 }
 
+// ... Kode JadwalSemingguSiswaScreen dan DetailProfilSiswaScreen tetap sama seperti milik Anda sebelumnya.
 class JadwalSemingguSiswaScreen extends StatelessWidget {
   final List<Map<String, dynamic>> allJadwal;
   const JadwalSemingguSiswaScreen({super.key, required this.allJadwal});
