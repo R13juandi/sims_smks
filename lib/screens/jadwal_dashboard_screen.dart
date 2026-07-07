@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../login_screen.dart'; // Sesuaikan path jika letaknya berbeda
 
 class JadwalDashboardScreen extends StatefulWidget {
   const JadwalDashboardScreen({super.key});
@@ -11,175 +10,163 @@ class JadwalDashboardScreen extends StatefulWidget {
 
 class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> {
   final _supabase = Supabase.instance.client;
-
   bool _isLoading = true;
-  String _userRole = '';
-  String _userKelas = '';
-  String _namaGuru = '';
-  List<Map<String, dynamic>> _jadwalList = [];
+  
+  Map<String, dynamic> _biodata = {};
+  List<Map<String, dynamic>> _semuaJadwal = [];
+  
+  String? _selectedKelas;
+  List<String> _listKelasTersedia = [];
+
+  final List<String> _hariUrut = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _fetchJadwalDanProfil();
   }
 
-  Future<void> _loadUserData() async {
+  Future<void> _fetchJadwalDanProfil() async {
+    setState(() => _isLoading = true);
     try {
       final user = _supabase.auth.currentUser;
-      if (user != null) {
-        final response = await _supabase
-            .from('profiles')
-            .select('role, kelas, full_name')
-            .eq('id', user.id)
-            .maybeSingle(); // Menggunakan maybeSingle() agar tidak error jika data kosong
+      final prof = await _supabase.from('profiles').select('*').eq('id', user!.id).single();
+      
+      final resJadwal = await _supabase.from('jadwal').select('*');
+      List<Map<String, dynamic>> tempJadwal = List<Map<String, dynamic>>.from(resJadwal);
+      
+      // Ambil daftar kelas yang ada di tabel jadwal untuk Dropdown Guru
+      Set<String> kelasSet = tempJadwal.map((e) => (e['kelas'] ?? 'Tanpa Kelas').toString()).toSet();
+      List<String> klsList = kelasSet.toList()..sort();
 
-        if (response == null) {
-          // Jika data profil belum ada di database, lakukan logout paksa
-          await _supabase.auth.signOut();
-          if (!mounted) return;
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-            (route) => false,
-          );
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Profil pengguna tidak ditemukan di database. Silakan hubungi Admin.',
-              ),
-            ),
-          );
-          return;
-        }
-
+      if (mounted) {
         setState(() {
-          _userRole = response['role'] ?? '';
-          _userKelas = response['kelas'] ?? '';
-          _namaGuru = response['full_name'] ?? '';
-        });
+          _biodata = prof;
+          _semuaJadwal = tempJadwal;
+          _listKelasTersedia = klsList;
 
-        await _fetchJadwal();
-      } else {
-        if (!mounted) return;
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-          (route) => false,
-        );
+          if (prof['role'] == 'siswa') {
+            _selectedKelas = prof['kelas']; // Terkunci di kelas siswa tersebut
+          } else {
+            if (klsList.isNotEmpty) _selectedKelas = klsList.first; // Guru bisa pilih
+          }
+          
+          _isLoading = false;
+        });
       }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error memuat data: $e')));
-    }
-  }
-
-  Future<void> _fetchJadwal() async {
-    try {
-      final response = await _supabase
-          .from('jadwal_pelajaran')
-          .select()
-          .order('hari', ascending: true);
-
-      setState(() {
-        _jadwalList = List<Map<String, dynamic>>.from(response);
-        _isLoading = false;
-      });
-    } catch (_) {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dashboard'),
-        backgroundColor: Colors.green[800],
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Keluar',
-            onPressed: () async {
-              // 1. Lakukan sign out dari Supabase
-              await _supabase.auth.signOut();
+    bool isSiswa = _biodata['role'] == 'siswa';
 
-              // 2. Bersihkan rute dan kembali ke halaman Login
-              if (!mounted) return;
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
-                (route) => false,
-              );
-            },
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Selamat datang, $_namaGuru!',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+    // Filter jadwal sesuai dropdown kelas yang dipilih, lalu urutkan berdasarkan hari & jam
+    List<Map<String, dynamic>> jadwalFiltered = _semuaJadwal.where((j) => j['kelas'] == _selectedKelas).toList();
+    jadwalFiltered.sort((a, b) {
+      int cmp = _hariUrut.indexOf(a['hari'] ?? '').compareTo(_hariUrut.indexOf(b['hari'] ?? ''));
+      if (cmp == 0) return (a['jam_mulai'] ?? '').compareTo(b['jam_mulai'] ?? '');
+      return cmp;
+    });
+
+    Map<String, List<Map<String, dynamic>>> groupedJadwal = {};
+    for (var j in jadwalFiltered) {
+      String hari = j['hari'] ?? 'Senin';
+      if (!groupedJadwal.containsKey(hari)) groupedJadwal[hari] = [];
+      groupedJadwal[hari]!.add(j);
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(title: const Text('Jadwal Pelajaran', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)), backgroundColor: Colors.white, elevation: 0.5, iconTheme: const IconThemeData(color: Colors.black)),
+      body: _isLoading 
+        ? const Center(child: CircularProgressIndicator())
+        : Column(
+            children: [
+              // PANEL DROPDOWN (Dikunci jika siswa, bebas pilih jika guru)
+              Container(
+                padding: const EdgeInsets.all(20), decoration: const BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0)))),
+                child: Row(
+                  children: [
+                    const Icon(Icons.class_, color: Colors.blue), const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: _listKelasTersedia.contains(_selectedKelas) ? _selectedKelas : null,
+                        decoration: InputDecoration(
+                          labelText: isSiswa ? 'Kelas Anda' : 'Pilih Kelas', 
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), 
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)
+                        ),
+                        items: _listKelasTersedia.map((k) => DropdownMenuItem(value: k, child: Text(k, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
+                        onChanged: isSiswa ? null : (val) => setState(() => _selectedKelas = val), // Kunci untuk siswa
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Role: $_userRole | Kelas: $_userKelas',
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                  const Divider(height: 30, thickness: 1.5),
-                  const Text(
-                    'Daftar Jadwal',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: _jadwalList.isEmpty
-                        ? const Center(
-                            child: Text('Belum ada jadwal yang tersedia.'),
-                          )
-                        : ListView.builder(
-                            itemCount: _jadwalList.length,
-                            itemBuilder: (context, index) {
-                              final j = _jadwalList[index];
+                  ],
+                ),
+              ),
+
+              // LIST JADWAL PER HARI
+              Expanded(
+                child: groupedJadwal.isEmpty 
+                  ? const Center(child: Text('Belum ada jadwal untuk kelas ini.', style: TextStyle(color: Colors.grey)))
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _hariUrut.length,
+                      itemBuilder: (context, index) {
+                        String hari = _hariUrut[index];
+                        if (!groupedJadwal.containsKey(hari)) return const SizedBox(); // Sembunyikan hari yang kosong
+                        
+                        List<Map<String, dynamic>> listHariIni = groupedJadwal[hari]!;
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.calendar_month, size: 18, color: Colors.grey), const SizedBox(width: 8),
+                                  Text(hari.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.2)),
+                                ],
+                              ),
+                            ),
+                            ...listHariIni.map((j) {
                               return Card(
-                                margin: const EdgeInsets.symmetric(vertical: 4),
+                                elevation: 0, margin: const EdgeInsets.only(bottom: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade300)),
                                 child: ListTile(
-                                  title: Text(
-                                    j['kegiatan'] ?? '-',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  leading: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Text(j['jam_mulai'] ?? '-', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade900)),
+                                        Text(j['jam_selesai'] ?? '-', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                      ],
                                     ),
                                   ),
-                                  subtitle: Text(
-                                    'Kelas: ${j['kelas'] ?? '-'} • Hari: ${j['hari'] ?? '-'}',
-                                  ),
-                                  trailing: Text(
-                                    j['sesi'] ?? '-',
-                                    style: const TextStyle(fontSize: 12),
+                                  title: Text(j['mapel'] ?? j['mata_pelajaran'] ?? '-', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                  subtitle: Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.person, size: 14, color: Colors.grey), const SizedBox(width: 4),
+                                        Expanded(child: Text(j['guru'] ?? '-', style: const TextStyle(fontSize: 12, color: Colors.grey))),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               );
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            ),
+                            }).toList(),
+                          ],
+                        );
+                      }
+                    )
+              )
+            ],
+          ),
     );
   }
 }
