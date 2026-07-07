@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'tambah_user_screen.dart'; // Pastikan file ini ada sesuai project Anda
+import 'package:intl/intl.dart';
+import 'tambah_user_screen.dart';
 
 class ManajemenUserScreen extends StatefulWidget {
   const ManajemenUserScreen({super.key});
@@ -45,34 +46,107 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
   }
 
   // ==========================================================
-  // 🔥 DIALOG SUPER EDIT (SEMUA DATA BISA DIEDIT)
+  // 🔥 TAMPILAN DETAIL DATA PENGGUNA (HANYA BACA / READ-ONLY)
+  // ==========================================================
+  void _bukaDialogDetail(Map<String, dynamic> user) {
+    bool isSiswa = user['role'] == 'siswa';
+    
+    // Format Tanggal Lahir
+    String tglLahir = user['tanggal_lahir'] ?? '-';
+    if (tglLahir != '-') {
+      try { tglLahir = DateFormat('dd MMMM yyyy').format(DateTime.parse(tglLahir)); } catch (_) {}
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              CircleAvatar(backgroundColor: Colors.blue.shade100, child: Icon(isSiswa ? Icons.school : Icons.badge, color: Colors.blue.shade900)),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Detail Pengguna', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue.shade900))),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildInfoRow('Nama Lengkap', user['full_name']),
+                _buildInfoRow('Email Akun', user['email']),
+                _buildInfoRow('Role / Jabatan', user['role'].toString().toUpperCase()),
+                const Divider(height: 24),
+                
+                if (isSiswa) ...[
+                  _buildInfoRow('Kelas Aktif', user['kelas']),
+                  _buildInfoRow('NISN', user['nisn']),
+                  _buildInfoRow('NIPD', user['nipd']),
+                ] else ...[
+                  _buildInfoRow('NIP', user['nip']),
+                  _buildInfoRow('Mata Pelajaran', (user['mapel'] as List<dynamic>?)?.join(', ')),
+                  _buildInfoRow('Kelas Mengajar', (user['kelas_mengajar'] as List<dynamic>?)?.join(', ')),
+                ],
+                
+                const Divider(height: 24),
+                _buildInfoRow('Jenis Kelamin', user['jenis_kelamin']),
+                _buildInfoRow('Tempat, Tgl Lahir', '${user['tempat_lahir'] ?? '-'}, $tglLahir'),
+                _buildInfoRow('Agama', user['agama']),
+                _buildInfoRow('Nomor HP', user['nomor_hp']),
+                _buildInfoRow('NIK', user['nik']),
+                _buildInfoRow('Alamat Domisili', user['alamat']),
+              ],
+            ),
+          ),
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Tutup', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      }
+    );
+  }
+
+  Widget _buildInfoRow(String label, String? value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 2),
+          Text(value != null && value.isNotEmpty ? value : '-', style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================
+  // 🔥 DIALOG EDIT PENUH (BISA UNTUK KENAIKAN KELAS / RESET SANDI)
   // ==========================================================
   void _bukaDialogEdit(Map<String, dynamic> user) {
     bool isSiswa = user['role'] == 'siswa';
 
-    // Inisialisasi Data Pribadi
     final nameCtrl = TextEditingController(text: user['full_name']);
     final hpCtrl = TextEditingController(text: user['nomor_hp']);
     final alamatCtrl = TextEditingController(text: user['alamat']);
     final nikCtrl = TextEditingController(text: user['nik']);
     final tempatLahirCtrl = TextEditingController(text: user['tempat_lahir']);
     final tglLahirCtrl = TextEditingController(text: user['tanggal_lahir']);
-    
-    // Inisialisasi Data Keamanan
     final passwordCtrl = TextEditingController();
 
-    // Inisialisasi Data Akademik
     final nisnCtrl = TextEditingController(text: user['nisn']);
     final nipdCtrl = TextEditingController(text: user['nipd']);
     final nipCtrl = TextEditingController(text: user['nip']);
     
-    // Konversi Array Mapel & Kelas menjadi String (Pisahkan dengan koma)
     String mapelStr = (user['mapel'] as List<dynamic>?)?.join(', ') ?? '';
     String kelasMengajarStr = (user['kelas_mengajar'] as List<dynamic>?)?.join(', ') ?? '';
     final mapelCtrl = TextEditingController(text: mapelStr);
     final kelasMengajarCtrl = TextEditingController(text: kelasMengajarStr);
 
-    // Dropdown Values
     String selectedRole = user['role'] ?? 'siswa';
     String? selectedJK = user['jenis_kelamin'];
     String? selectedAgama = user['agama'];
@@ -81,7 +155,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
     final List<String> listRole = ['siswa', 'guru', 'tata_usaha', 'admin', 'kepsek'];
     final List<String> listAgama = ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Konghucu'];
     final List<String> listJK = ['Laki-laki', 'Perempuan'];
-    final List<String> listKelasTersedia = ['X TKJ', 'XI TKJ', 'XII TKJ'];
+    final List<String> listKelasTersedia = ['X TKJ', 'XI TKJ', 'XII TKJ']; // Tambahkan kelas lain jika ada
 
     showDialog(
       context: context,
@@ -99,8 +173,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
                     children: [
                       _buildHeaderSection('Keamanan Akun'),
                       TextField(
-                        controller: passwordCtrl,
-                        obscureText: true,
+                        controller: passwordCtrl, obscureText: true,
                         decoration: const InputDecoration(labelText: 'Reset Password (Kosongkan jika tidak diganti)', border: OutlineInputBorder(), hintText: 'Masukkan sandi baru...'),
                       ),
                       const SizedBox(height: 16),
@@ -114,51 +187,36 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
                       _buildTextField('Alamat Domisili', alamatCtrl, maxLines: 2),
 
                       DropdownButtonFormField<String>(
-                        value: listJK.contains(selectedJK) ? selectedJK : null,
-                        decoration: const InputDecoration(labelText: 'Jenis Kelamin', border: OutlineInputBorder()),
-                        items: listJK.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                        onChanged: (v) => setStateDialog(() => selectedJK = v),
+                        value: listJK.contains(selectedJK) ? selectedJK : null, decoration: const InputDecoration(labelText: 'Jenis Kelamin', border: OutlineInputBorder()),
+                        items: listJK.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: (v) => setStateDialog(() => selectedJK = v),
                       ),
                       const SizedBox(height: 12),
-                      
                       DropdownButtonFormField<String>(
-                        value: listAgama.contains(selectedAgama) ? selectedAgama : null,
-                        decoration: const InputDecoration(labelText: 'Agama', border: OutlineInputBorder()),
-                        items: listAgama.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                        onChanged: (v) => setStateDialog(() => selectedAgama = v),
+                        value: listAgama.contains(selectedAgama) ? selectedAgama : null, decoration: const InputDecoration(labelText: 'Agama', border: OutlineInputBorder()),
+                        items: listAgama.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: (v) => setStateDialog(() => selectedAgama = v),
                       ),
                       const SizedBox(height: 16),
 
                       _buildHeaderSection('Data Akademik & Hak Akses'),
                       DropdownButtonFormField<String>(
-                        value: listRole.contains(selectedRole) ? selectedRole : null,
-                        decoration: const InputDecoration(labelText: 'Role / Jabatan', border: OutlineInputBorder()),
+                        value: listRole.contains(selectedRole) ? selectedRole : null, decoration: const InputDecoration(labelText: 'Role / Jabatan', border: OutlineInputBorder()),
                         items: listRole.map((e) => DropdownMenuItem(value: e, child: Text(e.toUpperCase()))).toList(),
-                        // 🔥 KUNCI ROLE: Jika dia siswa, tidak bisa diubah. Jika bukan, bebas diubah jabatannya.
-                        onChanged: isSiswa ? null : (v) => setStateDialog(() {
-                          selectedRole = v!;
-                        }),
+                        onChanged: isSiswa ? null : (v) => setStateDialog(() => selectedRole = v!),
                       ),
-                      if (isSiswa)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 4, bottom: 12),
-                          child: Text('*Akun Siswa tidak dapat diubah rolenya', style: TextStyle(color: Colors.red, fontSize: 11)),
-                        ),
+                      if (isSiswa) const Padding(padding: EdgeInsets.only(top: 4, bottom: 12), child: Text('*Akun Siswa tidak dapat diubah rolenya', style: TextStyle(color: Colors.red, fontSize: 11))),
                       const SizedBox(height: 12),
 
-                      // FIELD KHUSUS SISWA
                       if (selectedRole == 'siswa') ...[
                         _buildTextField('NISN', nisnCtrl, isNumber: true),
                         _buildTextField('NIPD', nipdCtrl, isNumber: true),
                         DropdownButtonFormField<String>(
-                          value: listKelasTersedia.contains(selectedKelasSiswa) ? selectedKelasSiswa : null,
-                          decoration: const InputDecoration(labelText: 'Kelas Aktif', border: OutlineInputBorder()),
+                          value: listKelasTersedia.contains(selectedKelasSiswa) ? selectedKelasSiswa : null, decoration: const InputDecoration(labelText: 'Kelas Aktif', border: OutlineInputBorder()),
                           items: listKelasTersedia.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                           onChanged: (v) => setStateDialog(() => selectedKelasSiswa = v),
                         ),
+                        const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('*Ubah kelas ini untuk menaikkan/menurunkan kelas siswa.', style: TextStyle(color: Colors.green, fontSize: 11, fontStyle: FontStyle.italic))),
                       ],
 
-                      // FIELD KHUSUS GURU/STAFF
                       if (selectedRole != 'siswa') ...[
                         _buildTextField('NIP (Opsional)', nipCtrl, isNumber: true),
                         _buildTextField('Mata Pelajaran', mapelCtrl, hint: 'Cth: Matematika, B. Inggris (Pisahkan dgn koma)'),
@@ -173,16 +231,11 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900),
                   onPressed: () async {
-                    Navigator.pop(context); // Tutup dialog
+                    Navigator.pop(context);
                     _prosesUpdateUser(
-                      userId: user['id'],
-                      roleAsliSiswa: isSiswa,
-                      name: nameCtrl.text, hp: hpCtrl.text, alamat: alamatCtrl.text, nik: nikCtrl.text,
-                      tmptLahir: tempatLahirCtrl.text, tglLahir: tglLahirCtrl.text,
-                      jk: selectedJK, agama: selectedAgama, roleBaru: selectedRole,
-                      nisn: nisnCtrl.text, nipd: nipdCtrl.text, kelasSiswa: selectedKelasSiswa,
-                      nip: nipCtrl.text, mapelStr: mapelCtrl.text, kelasMngjrStr: kelasMengajarCtrl.text,
-                      passwordBaru: passwordCtrl.text
+                      userId: user['id'], roleAsliSiswa: isSiswa, name: nameCtrl.text, hp: hpCtrl.text, alamat: alamatCtrl.text, nik: nikCtrl.text,
+                      tmptLahir: tempatLahirCtrl.text, tglLahir: tglLahirCtrl.text, jk: selectedJK, agama: selectedAgama, roleBaru: selectedRole,
+                      nisn: nisnCtrl.text, nipd: nipdCtrl.text, kelasSiswa: selectedKelasSiswa, nip: nipCtrl.text, mapelStr: mapelCtrl.text, kelasMngjrStr: kelasMengajarCtrl.text, passwordBaru: passwordCtrl.text
                     );
                   },
                   child: const Text('Simpan Perubahan', style: TextStyle(color: Colors.white)),
@@ -196,73 +249,38 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
   }
 
   Widget _buildTextField(String label, TextEditingController ctrl, {bool isNumber = false, int maxLines = 1, String hint = ''}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: TextField(
-        controller: ctrl,
-        keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-        maxLines: maxLines,
-        decoration: InputDecoration(labelText: label, hintText: hint, border: const OutlineInputBorder()),
-      ),
-    );
+    return Padding(padding: const EdgeInsets.only(bottom: 12), child: TextField(controller: ctrl, keyboardType: isNumber ? TextInputType.number : TextInputType.text, maxLines: maxLines, decoration: InputDecoration(labelText: label, hintText: hint, border: const OutlineInputBorder())));
   }
 
   Widget _buildHeaderSection(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 12),
-      child: Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue.shade900)),
-    );
+    return Padding(padding: const EdgeInsets.only(top: 8, bottom: 12), child: Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue.shade900)));
   }
 
-  // ==========================================================
-  // 🔥 PROSES UPDATE KE DATABASE & GANTI PASSWORD
-  // ==========================================================
   Future<void> _prosesUpdateUser({
     required String userId, required bool roleAsliSiswa, required String name, required String hp,
     required String alamat, required String nik, required String tmptLahir, required String tglLahir,
-    String? jk, String? agama, required String roleBaru,
-    required String nisn, required String nipd, String? kelasSiswa,
+    String? jk, String? agama, required String roleBaru, required String nisn, required String nipd, String? kelasSiswa,
     required String nip, required String mapelStr, required String kelasMngjrStr, required String passwordBaru
   }) async {
     setState(() => _isLoading = true);
     try {
-      // 1. Siapkan Data Update Biodata
       Map<String, dynamic> updates = {
-        'full_name': name,
-        'nomor_hp': hp,
-        'alamat': alamat,
-        'nik': nik,
-        'tempat_lahir': tmptLahir,
-        'tanggal_lahir': tglLahir.isEmpty ? null : tglLahir,
-        'jenis_kelamin': jk,
-        'agama': agama,
+        'full_name': name, 'nomor_hp': hp, 'alamat': alamat, 'nik': nik, 'tempat_lahir': tmptLahir, 'tanggal_lahir': tglLahir.isEmpty ? null : tglLahir, 'jenis_kelamin': jk, 'agama': agama,
       };
 
       if (roleAsliSiswa) {
-        // Jika aslinya Siswa, Update Data Siswanya
-        updates['nisn'] = nisn;
-        updates['nipd'] = nipd;
-        updates['kelas'] = kelasSiswa;
+        updates['nisn'] = nisn; updates['nipd'] = nipd; updates['kelas'] = kelasSiswa;
       } else {
-        // Jika aslinya bukan siswa, Update Data Pegawai & Role
-        updates['role'] = roleBaru;
-        updates['nip'] = nip;
-        
-        // Ubah String jadi Array
+        updates['role'] = roleBaru; updates['nip'] = nip;
         updates['mapel'] = mapelStr.isEmpty ? [] : mapelStr.split(',').map((e) => e.trim()).toList();
         updates['kelas_mengajar'] = kelasMngjrStr.isEmpty ? [] : kelasMngjrStr.split(',').map((e) => e.trim()).toList();
       }
 
-      // Eksekusi Update Tabel Profile
       await _supabase.from('profiles').update(updates).eq('id', userId);
 
-      // 2. Eksekusi Ganti Password (Memanggil Fungsi RPC di Supabase)
       if (passwordBaru.isNotEmpty) {
         try {
-          await _supabase.rpc('admin_update_password', params: {
-            'uid': userId,
-            'new_pass': passwordBaru
-          });
+          await _supabase.rpc('admin_update_password', params: {'uid': userId, 'new_pass': passwordBaru});
           _showSnackBar('Biodata & Password berhasil diperbarui!', Colors.green);
         } catch (e) {
           _showSnackBar('Biodata diperbarui, TAPI gagal ubah password (RPC Error).', Colors.orange);
@@ -270,23 +288,18 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
       } else {
         _showSnackBar('Biodata berhasil diperbarui!', Colors.green);
       }
-
-      _fetchUsers(); // Refresh Data
+      _fetchUsers();
     } catch (e) {
       setState(() => _isLoading = false);
       _showSnackBar('Gagal memperbarui: $e', Colors.red);
     }
   }
 
-  // ==========================================================
-  // FUNGSI HAPUS USER
-  // ==========================================================
   void _konfirmasiHapus(String id, String nama) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Hapus Pengguna?'),
-        content: Text('Anda yakin ingin menghapus data $nama? Aksi ini tidak dapat dibatalkan.'),
+        title: const Text('Hapus Pengguna?'), content: Text('Anda yakin ingin menghapus data $nama? Aksi ini tidak dapat dibatalkan.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
           ElevatedButton(
@@ -295,8 +308,6 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
               Navigator.pop(context);
               setState(() => _isLoading = true);
               try {
-                // Hapus akun dari auth.users juga memerlukan RPC atau backend, 
-                // ini akan menghapus dari tabel profiles sementara.
                 await _supabase.from('profiles').delete().eq('id', id);
                 _fetchUsers();
                 _showSnackBar('Pengguna berhasil dihapus', Colors.green);
@@ -314,7 +325,6 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
 
   @override
   Widget build(BuildContext context) {
-    // 1. FILTER SEARCH
     var filteredList = _users.where((u) {
       if (_searchQuery.isEmpty) return true;
       final nama = (u['full_name'] ?? '').toString().toLowerCase();
@@ -323,7 +333,6 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
       return nama.contains(_searchQuery) || r.contains(_searchQuery) || nisn.contains(_searchQuery);
     }).toList();
 
-    // 2. KELOMPOK TAB
     final listSiswa = filteredList.where((u) => u['role'] == 'siswa').toList();
     final listGuru = filteredList.where((u) => u['role'] == 'guru' || u['role'] == 'kepsek').toList();
     final listStaff = filteredList.where((u) => u['role'] == 'tata_usaha' || u['role'] == 'admin').toList();
@@ -334,20 +343,12 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
         title: const Text('Manajemen Pengguna', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white, elevation: 0.5, iconTheme: const IconThemeData(color: Colors.black),
         bottom: TabBar(
-          controller: _tabController,
-          labelColor: Colors.blue.shade900,
-          unselectedLabelColor: Colors.grey,
-          indicatorColor: Colors.blue.shade900,
-          tabs: const [
-            Tab(text: 'Siswa'),
-            Tab(text: 'Pendidik'),
-            Tab(text: 'Staff & Admin'),
-          ],
+          controller: _tabController, labelColor: Colors.blue.shade900, unselectedLabelColor: Colors.grey, indicatorColor: Colors.blue.shade900,
+          tabs: const [Tab(text: 'Siswa'), Tab(text: 'Pendidik'), Tab(text: 'Staff & Admin')],
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: Colors.blue.shade900,
-        icon: const Icon(Icons.person_add, color: Colors.white),
+        backgroundColor: Colors.blue.shade900, icon: const Icon(Icons.person_add, color: Colors.white),
         label: const Text('Tambah User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const TambahUserScreen())).then((_) => _fetchUsers());
@@ -360,9 +361,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
             child: TextField(
               decoration: InputDecoration(
                 hintText: 'Cari Nama, NISN, atau NIK...', prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                filled: true, fillColor: const Color(0xFFF1F5F9),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                filled: true, fillColor: const Color(0xFFF1F5F9), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(vertical: 0),
               ),
               onChanged: (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
             ),
@@ -372,9 +371,9 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
               : TabBarView(
                   controller: _tabController,
                   children: [
-                    _buildUserList(listSiswa),
-                    _buildUserList(listGuru),
-                    _buildUserList(listStaff),
+                    _buildSiswaList(listSiswa), // List Khusus Siswa (Menggunakan Folder)
+                    _buildPegawaiList(listGuru),
+                    _buildPegawaiList(listStaff),
                   ],
                 ),
           ),
@@ -383,10 +382,63 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
     );
   }
 
-  Widget _buildUserList(List<Map<String, dynamic>> usersData) {
-    if (usersData.isEmpty) {
-      return const Center(child: Text('Data tidak ditemukan.', style: TextStyle(color: Colors.grey)));
+  // ==========================================================
+  // 🔥 FUNGSI KHUSUS UNTUK MENYUSUN SISWA KE DALAM FOLDER KELAS
+  // ==========================================================
+  Widget _buildSiswaList(List<Map<String, dynamic>> siswaData) {
+    if (siswaData.isEmpty) return const Center(child: Text('Data siswa tidak ditemukan.', style: TextStyle(color: Colors.grey)));
+
+    // Kelompokkan siswa berdasarkan Kelas
+    Map<String, List<Map<String, dynamic>>> groupedSiswa = {};
+    for (var s in siswaData) {
+      final k = s['kelas'] ?? 'Tanpa Kelas';
+      if (!groupedSiswa.containsKey(k)) groupedSiswa[k] = [];
+      groupedSiswa[k]!.add(s);
     }
+    final sortedKelas = groupedSiswa.keys.toList()..sort();
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: sortedKelas.length,
+      itemBuilder: (context, index) {
+        String kelas = sortedKelas[index];
+        List<Map<String, dynamic>> listSiswaKelas = groupedSiswa[kelas]!;
+
+        return Card(
+          elevation: 0, margin: const EdgeInsets.only(bottom: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade300)),
+          child: ExpansionTile(
+            leading: const Icon(Icons.folder_shared_rounded, color: Colors.amber, size: 36),
+            title: Text('Kelas $kelas', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
+            subtitle: Text('${listSiswaKelas.length} Siswa terdaftar', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            children: listSiswaKelas.map((siswa) {
+              return Container(
+                decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.shade200))),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                  leading: const CircleAvatar(backgroundColor: Color(0xFFE6FFFA), child: Icon(Icons.school, color: Colors.teal)),
+                  title: Text(siswa['full_name'] ?? 'Tanpa Nama', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  subtitle: Text('NISN: ${siswa['nisn'] ?? '-'}', style: const TextStyle(fontSize: 12)),
+                  onTap: () => _bukaDialogDetail(siswa), // 🔥 KLIK NAMA UNTUK LIHAT DETAIL
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(icon: const Icon(Icons.edit, color: Colors.orange), onPressed: () => _bukaDialogEdit(siswa)),
+                      IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _konfirmasiHapus(siswa['id'], siswa['full_name'])),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  // List Standar untuk Guru & Staff (Tidak perlu di folder)
+  Widget _buildPegawaiList(List<Map<String, dynamic>> usersData) {
+    if (usersData.isEmpty) return const Center(child: Text('Data tidak ditemukan.', style: TextStyle(color: Colors.grey)));
+    
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: usersData.length,
@@ -399,16 +451,17 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade300)),
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            leading: CircleAvatar(backgroundColor: Colors.blue.shade50, child: Icon(Icons.person, color: Colors.blue.shade900)),
+            leading: CircleAvatar(backgroundColor: Colors.blue.shade50, child: Icon(Icons.badge, color: Colors.blue.shade900)),
             title: Text(user['full_name'] ?? 'Tanpa Nama', style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 4),
-                Text('Role: $role ${user['kelas'] != null ? '| Kelas: ${user['kelas']}' : ''}', style: TextStyle(color: Colors.blue.shade800, fontWeight: FontWeight.w600, fontSize: 12)),
+                Text('Role: $role', style: TextStyle(color: Colors.blue.shade800, fontWeight: FontWeight.w600, fontSize: 12)),
                 Text('Email: ${user['email'] ?? '-'}', style: const TextStyle(fontSize: 12)),
               ],
             ),
+            onTap: () => _bukaDialogDetail(user),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
