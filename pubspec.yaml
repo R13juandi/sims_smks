@@ -39,7 +39,7 @@ dependencies:
   pdf: ^3.12.0 # Untuk membuat file PDF
   printing: ^5.14.3 # Untuk print atau simpan PDF
   go_router: ^14.0.0 # Untuk navigasi
-  image_picker: ^1.1.0 # Untuk upload foto absen
+  image_picker: ^1.2.3 # Untuk upload foto absen
   geolocator: ^13.0.2
   intl: ^0.20.2
   google_mlkit_face_detection: ^0.11.0 # Deteksi wajah (Mata, Hidung, Mulut)
