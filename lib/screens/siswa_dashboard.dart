@@ -136,7 +136,6 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
           const Text('Menu Akademik', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
           const SizedBox(height: 16),
 
-          // 🔥 KINI MENJADI 4 MENU YANG SANGAT RAPI KARENA REKAP DIPINDAH KE DALAM PRESENSI
           GridView.count(
             crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 1.15,
             children: [
@@ -177,6 +176,13 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
                   physics: const NeverScrollableScrollPhysics(), shrinkWrap: true, itemCount: _jadwalHariIni.length,
                   itemBuilder: (context, index) {
                     final j = _jadwalHariIni[index];
+                    
+                    // 🔥 PERBAIKAN: FORMAT JAM AGAR MUNCUL DI DASHBOARD (HH:mm)
+                    String jamMulai = j['jam_mulai'] != null && j['jam_mulai'].toString().length >= 5 ? j['jam_mulai'].toString().substring(0, 5) : '00:00';
+                    String jamSelesai = j['jam_selesai'] != null && j['jam_selesai'].toString().length >= 5 ? j['jam_selesai'].toString().substring(0, 5) : '00:00';
+                    String guru = j['guru_pengampu'] ?? j['guru'] ?? '-';
+                    String mapel = j['mata_pelajaran'] ?? j['mapel'] ?? '-';
+
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF1F5F9)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.01), blurRadius: 10, offset: const Offset(0, 4))]),
                       child: Row(
@@ -187,8 +193,9 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(j['mata_pelajaran'] ?? '-', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A))), const SizedBox(height: 4),
-                                Text('Sesi: ${j['sesi'] ?? '-'}  •  ${j['guru_pengampu'] ?? '-'}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                Text(mapel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A))), const SizedBox(height: 4),
+                                // 🔥 TEKS JAM DITAMPILKAN DI SINI MENGGANTIKAN KATA "SESI"
+                                Text('Jam: $jamMulai - $jamSelesai WIB  •  $guru', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                               ],
                             ),
                           ),
@@ -224,7 +231,6 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
   }
 }
 
-// ... Kode JadwalSemingguSiswaScreen dan DetailProfilSiswaScreen tetap sama seperti milik Anda sebelumnya.
 class JadwalSemingguSiswaScreen extends StatelessWidget {
   final List<Map<String, dynamic>> allJadwal;
   const JadwalSemingguSiswaScreen({super.key, required this.allJadwal});
@@ -238,7 +244,7 @@ class JadwalSemingguSiswaScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<String> listHari = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
+    final List<String> listHari = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
     final hariIni = _getNamaHariIni();
 
     return Scaffold(
@@ -251,6 +257,8 @@ class JadwalSemingguSiswaScreen extends StatelessWidget {
           final jadwals = allJadwal.where((j) => j['hari'] == hari).toList();
           final bool isHariIni = hari == hariIni;
 
+          if (jadwals.isEmpty && !isHariIni) return const SizedBox.shrink();
+
           return Container(
             margin: const EdgeInsets.only(bottom: 12), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: isHariIni ? const Color(0xFF3B82F6) : const Color(0xFFF1F5F9), width: isHariIni ? 1.5 : 1)),
             child: Theme(
@@ -260,11 +268,23 @@ class JadwalSemingguSiswaScreen extends StatelessWidget {
                 children: [
                   if (jadwals.isEmpty) const Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Tidak ada jadwal pelajaran', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)))
                   else ...jadwals.map((j) {
+                      
+                      // 🔥 PERBAIKAN: FORMAT JAM UNTUK DAFTAR SEMINGGU JUGA
+                      String jamMulai = j['jam_mulai'] != null && j['jam_mulai'].toString().length >= 5 ? j['jam_mulai'].toString().substring(0, 5) : '00:00';
+                      String jamSelesai = j['jam_selesai'] != null && j['jam_selesai'].toString().length >= 5 ? j['jam_selesai'].toString().substring(0, 5) : '00:00';
+                      String guru = j['guru_pengampu'] ?? j['guru'] ?? '-';
+                      String mapel = j['mata_pelajaran'] ?? j['mapel'] ?? '-';
+
                       return Container(
                         margin: const EdgeInsets.only(left: 16, right: 16, bottom: 12), padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12)),
                         child: Row(
                           children: [
-                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(j['mata_pelajaran'] ?? '-', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))), const SizedBox(height: 4), Text('Sesi: ${j['sesi'] ?? '-'}  •  ${j['guru_pengampu'] ?? '-'}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))]))
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(mapel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))), 
+                              const SizedBox(height: 4), 
+                              // 🔥 TEKS JAM DITAMPILKAN
+                              Text('Jam: $jamMulai - $jamSelesai WIB  •  $guru', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))
+                            ]))
                           ],
                         ),
                       );
@@ -279,6 +299,7 @@ class JadwalSemingguSiswaScreen extends StatelessWidget {
   }
 }
 
+// ... Kodingan DetailProfilSiswaScreen tetap sama
 class DetailProfilSiswaScreen extends StatelessWidget {
   final Map<String, dynamic> biodata;
   const DetailProfilSiswaScreen({super.key, required this.biodata});
