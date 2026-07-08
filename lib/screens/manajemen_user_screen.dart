@@ -10,27 +10,38 @@ class ManajemenUserScreen extends StatefulWidget {
   State<ManajemenUserScreen> createState() => _ManajemenUserScreenState();
 }
 
-class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTickerProviderStateMixin {
+class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerProviderStateMixin {
   final _supabase = Supabase.instance.client;
   bool _isLoading = true;
   List<Map<String, dynamic>> _users = [];
   String _searchQuery = '';
 
-  late TabController _tabController;
+  TabController? _tabController;
+  bool _isKepsek = false; // 🔥 Variabel Detektif Role
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _fetchUsers();
+    _fetchUsersAndRole();
   }
 
-  Future<void> _fetchUsers() async {
+  Future<void> _fetchUsersAndRole() async {
     setState(() => _isLoading = true);
     try {
+      // 1. Cek Role Akun yang sedang Login
+      final currentUser = _supabase.auth.currentUser;
+      final myProfile = await _supabase.from('profiles').select('role').eq('id', currentUser!.id).single();
+      
+      bool isKepsekLogin = myProfile['role'] == 'kepsek';
+
+      // 2. Ambil semua data user
       final res = await _supabase.from('profiles').select('*').order('full_name', ascending: true);
+      
       if (mounted) {
         setState(() {
+          _isKepsek = isKepsekLogin;
+          // 🔥 Jika Kepsek, Tab hanya 2. Jika Admin/TU, Tab ada 3.
+          _tabController = TabController(length: _isKepsek ? 2 : 3, vsync: this);
           _users = List<Map<String, dynamic>>.from(res);
           _isLoading = false;
         });
@@ -51,7 +62,6 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
   void _bukaDialogDetail(Map<String, dynamic> user) {
     bool isSiswa = user['role'] == 'siswa';
     
-    // Format Tanggal Lahir
     String tglLahir = user['tanggal_lahir'] ?? '-';
     if (tglLahir != '-') {
       try { tglLahir = DateFormat('dd MMMM yyyy').format(DateTime.parse(tglLahir)); } catch (_) {}
@@ -84,7 +94,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
                   _buildInfoRow('NIPD', user['nipd']),
                 ] else ...[
                   _buildInfoRow('NIP', user['nip']),
-                  _buildInfoRow('Mata Pelajaran', (user['mapel'] as List<dynamic>?)?.join(', ')),
+                  _buildInfoRow('Mata Pelajaran', (user['mapel'] as List<dynamic>?)?.join(', ') ?? user['mata_pelajaran']),
                   _buildInfoRow('Kelas Mengajar', (user['kelas_mengajar'] as List<dynamic>?)?.join(', ')),
                 ],
                 
@@ -125,7 +135,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
   }
 
   // ==========================================================
-  // 🔥 DIALOG EDIT PENUH (BISA UNTUK KENAIKAN KELAS / RESET SANDI)
+  // 🔥 DIALOG EDIT PENUH (HANYA MUNCUL UNTUK ADMIN & TU)
   // ==========================================================
   void _bukaDialogEdit(Map<String, dynamic> user) {
     bool isSiswa = user['role'] == 'siswa';
@@ -155,7 +165,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
     final List<String> listRole = ['siswa', 'guru', 'tata_usaha', 'admin', 'kepsek'];
     final List<String> listAgama = ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Konghucu'];
     final List<String> listJK = ['Laki-laki', 'Perempuan'];
-    final List<String> listKelasTersedia = ['X TKJ', 'XI TKJ', 'XII TKJ']; // Tambahkan kelas lain jika ada
+    final List<String> listKelasTersedia = ['X TKJ', 'XI TKJ', 'XII TKJ']; 
 
     showDialog(
       context: context,
@@ -288,7 +298,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
       } else {
         _showSnackBar('Biodata berhasil diperbarui!', Colors.green);
       }
-      _fetchUsers();
+      _fetchUsersAndRole(); // Refresh Data
     } catch (e) {
       setState(() => _isLoading = false);
       _showSnackBar('Gagal memperbarui: $e', Colors.red);
@@ -309,7 +319,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
               setState(() => _isLoading = true);
               try {
                 await _supabase.from('profiles').delete().eq('id', id);
-                _fetchUsers();
+                _fetchUsersAndRole(); // Refresh Data
                 _showSnackBar('Pengguna berhasil dihapus', Colors.green);
               } catch (e) {
                 setState(() => _isLoading = false);
@@ -337,6 +347,11 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
     final listGuru = filteredList.where((u) => u['role'] == 'guru' || u['role'] == 'kepsek').toList();
     final listStaff = filteredList.where((u) => u['role'] == 'tata_usaha' || u['role'] == 'admin').toList();
 
+    // Pastikan TabController sudah dirender setelah Fetch Data
+    if (_tabController == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -344,14 +359,19 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
         backgroundColor: Colors.white, elevation: 0.5, iconTheme: const IconThemeData(color: Colors.black),
         bottom: TabBar(
           controller: _tabController, labelColor: Colors.blue.shade900, unselectedLabelColor: Colors.grey, indicatorColor: Colors.blue.shade900,
-          tabs: const [Tab(text: 'Siswa'), Tab(text: 'Pendidik'), Tab(text: 'Staff & Admin')],
+          tabs: [
+            const Tab(text: 'Siswa'), 
+            const Tab(text: 'Pendidik'), 
+            if (!_isKepsek) const Tab(text: 'Staff & Admin') // 🔥 Sembunyikan untuk Kepsek
+          ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      // 🔥 Sembunyikan Floating Action Button untuk Kepsek
+      floatingActionButton: _isKepsek ? null : FloatingActionButton.extended(
         backgroundColor: Colors.blue.shade900, icon: const Icon(Icons.person_add, color: Colors.white),
         label: const Text('Tambah User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const TambahUserScreen())).then((_) => _fetchUsers());
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const TambahUserScreen())).then((_) => _fetchUsersAndRole());
         },
       ),
       body: Column(
@@ -371,9 +391,9 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
               : TabBarView(
                   controller: _tabController,
                   children: [
-                    _buildSiswaList(listSiswa), // List Khusus Siswa (Menggunakan Folder)
+                    _buildSiswaList(listSiswa), 
                     _buildPegawaiList(listGuru),
-                    _buildPegawaiList(listStaff),
+                    if (!_isKepsek) _buildPegawaiList(listStaff), // 🔥 Sembunyikan untuk Kepsek
                   ],
                 ),
           ),
@@ -382,13 +402,9 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
     );
   }
 
-  // ==========================================================
-  // 🔥 FUNGSI KHUSUS UNTUK MENYUSUN SISWA KE DALAM FOLDER KELAS
-  // ==========================================================
   Widget _buildSiswaList(List<Map<String, dynamic>> siswaData) {
     if (siswaData.isEmpty) return const Center(child: Text('Data siswa tidak ditemukan.', style: TextStyle(color: Colors.grey)));
 
-    // Kelompokkan siswa berdasarkan Kelas
     Map<String, List<Map<String, dynamic>>> groupedSiswa = {};
     for (var s in siswaData) {
       final k = s['kelas'] ?? 'Tanpa Kelas';
@@ -418,8 +434,9 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
                   leading: const CircleAvatar(backgroundColor: Color(0xFFE6FFFA), child: Icon(Icons.school, color: Colors.teal)),
                   title: Text(siswa['full_name'] ?? 'Tanpa Nama', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   subtitle: Text('NISN: ${siswa['nisn'] ?? '-'}', style: const TextStyle(fontSize: 12)),
-                  onTap: () => _bukaDialogDetail(siswa), // 🔥 KLIK NAMA UNTUK LIHAT DETAIL
-                  trailing: Row(
+                  onTap: () => _bukaDialogDetail(siswa), 
+                  // 🔥 Sembunyikan ikon Edit & Hapus untuk Kepsek
+                  trailing: _isKepsek ? const Icon(Icons.chevron_right, color: Colors.grey) : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(icon: const Icon(Icons.edit, color: Colors.orange), onPressed: () => _bukaDialogEdit(siswa)),
@@ -435,7 +452,6 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
     );
   }
 
-  // List Standar untuk Guru & Staff (Tidak perlu di folder)
   Widget _buildPegawaiList(List<Map<String, dynamic>> usersData) {
     if (usersData.isEmpty) return const Center(child: Text('Data tidak ditemukan.', style: TextStyle(color: Colors.grey)));
     
@@ -462,7 +478,8 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with SingleTi
               ],
             ),
             onTap: () => _bukaDialogDetail(user),
-            trailing: Row(
+            // 🔥 Sembunyikan ikon Edit & Hapus untuk Kepsek
+            trailing: _isKepsek ? const Icon(Icons.chevron_right, color: Colors.grey) : Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(icon: const Icon(Icons.edit, color: Colors.orange), onPressed: () => _bukaDialogEdit(user)),
