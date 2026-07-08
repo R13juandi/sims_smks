@@ -30,13 +30,7 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
   String _getNamaHariIni() {
     final now = DateTime.now();
     switch (now.weekday) {
-      case 1: return 'Senin';
-      case 2: return 'Selasa';
-      case 3: return 'Rabu';
-      case 4: return 'Kamis';
-      case 5: return 'Jumat';
-      case 6: return 'Sabtu';
-      default: return 'Minggu';
+      case 1: return 'Senin'; case 2: return 'Selasa'; case 3: return 'Rabu'; case 4: return 'Kamis'; case 5: return 'Jumat'; case 6: return 'Sabtu'; default: return 'Minggu';
     }
   }
 
@@ -55,13 +49,9 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
       _allJadwal = listJadwal.where((j) {
         String kelasJadwal = (j['kelas'] ?? '').toString().toLowerCase().trim();
         if (kelasJadwal == kelasSiswa) return true;
-        if (kelasSiswa.contains('10') || kelasSiswa.contains('x ')) {
-          return kelasJadwal.contains('10') || kelasJadwal.contains('x');
-        } else if (kelasSiswa.contains('11') || kelasSiswa.contains('xi')) {
-          return kelasJadwal.contains('11') || kelasJadwal.contains('xi');
-        } else if (kelasSiswa.contains('12') || kelasSiswa.contains('xii')) {
-          return kelasJadwal.contains('12') || kelasJadwal.contains('xii');
-        }
+        if (kelasSiswa.contains('10') || kelasSiswa.contains('x ')) return kelasJadwal.contains('10') || kelasJadwal.contains('x');
+        else if (kelasSiswa.contains('11') || kelasSiswa.contains('xi')) return kelasJadwal.contains('11') || kelasJadwal.contains('xi');
+        else if (kelasSiswa.contains('12') || kelasSiswa.contains('xii')) return kelasJadwal.contains('12') || kelasJadwal.contains('xii');
         return false;
       }).toList();
 
@@ -69,17 +59,12 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
       _jadwalHariIni = _allJadwal.where((j) => j['hari'] == hariIni).toList();
 
       setState(() { _isLoading = false; });
-    } catch (e) {
-      setState(() { _isLoading = false; });
-    }
+    } catch (e) { setState(() { _isLoading = false; }); }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(backgroundColor: Color(0xFFF8FAFC), body: Center(child: CircularProgressIndicator(color: Color(0xFF1E3A8A))));
-    }
-
+    if (_isLoading) return const Scaffold(backgroundColor: Color(0xFFF8FAFC), body: Center(child: CircularProgressIndicator(color: Color(0xFF1E3A8A))));
     final hariIni = _getNamaHariIni();
 
     return Scaffold(
@@ -90,14 +75,7 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
         actions: [
           Container(
             margin: const EdgeInsets.only(right: 12), decoration: BoxDecoration(color: Colors.red[50], shape: BoxShape.circle),
-            child: IconButton(
-              icon: Icon(Icons.logout_rounded, color: Colors.red[600], size: 20), tooltip: 'Keluar Aplikasi',
-              onPressed: () async {
-                await _supabase.auth.signOut();
-                if (!mounted) return;
-                Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const LoginScreen()), (route) => false);
-              },
-            ),
+            child: IconButton(icon: Icon(Icons.logout_rounded, color: Colors.red[600], size: 20), tooltip: 'Keluar Aplikasi', onPressed: () async { await _supabase.auth.signOut(); if (!mounted) return; Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const LoginScreen()), (route) => false); }),
           ),
         ],
       ),
@@ -112,19 +90,7 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
                 width: double.infinity, padding: const EdgeInsets.all(24), decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Selamat Datang Kembali,', style: TextStyle(fontSize: 14, color: Colors.white70)), const SizedBox(height: 4),
-                          Text(_biodataSiswa['full_name'] ?? 'Siswa', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.5)), const SizedBox(height: 16),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(30)),
-                            child: Text('Kelas ${_biodataSiswa['kelas'] ?? '-'}  •  NISN ${_biodataSiswa['nisn'] ?? '-'}', style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w500)),
-                          ),
-                        ],
-                      ),
-                    ),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Selamat Datang Kembali,', style: TextStyle(fontSize: 14, color: Colors.white70)), const SizedBox(height: 4), Text(_biodataSiswa['full_name'] ?? 'Siswa', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.5)), const SizedBox(height: 16), Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(30)), child: Text('Kelas ${_biodataSiswa['kelas'] ?? '-'}  •  NISN ${_biodataSiswa['nisn'] ?? '-'}', style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w500)))])),
                     const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 20),
                   ],
                 ),
@@ -132,29 +98,16 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
             ),
           ),
           const SizedBox(height: 32),
-
           const Text('Menu Akademik', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
           const SizedBox(height: 16),
 
           GridView.count(
             crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 1.15,
             children: [
-              _buildMenuCard(
-                icon: Icons.camera_front_rounded, color: const Color(0xFFEF4444), title: 'Presensi\n& Rekap',
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AbsensiSiswaScreen())),
-              ),
-              _buildMenuCard(
-                icon: Icons.analytics_rounded, color: const Color(0xFF3B82F6), title: 'Rapor\nSemester',
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => NilaiRaporScreen(siswaId: _supabase.auth.currentUser?.id ?? ''))),
-              ),
-              _buildMenuCard(
-                icon: Icons.account_balance_wallet_rounded, color: Colors.teal.shade600, title: 'Tagihan\n& SPP',
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SiswaAdministrasiScreen(siswaId: _supabase.auth.currentUser?.id ?? ''))),
-              ),
-              _buildMenuCard(
-                icon: Icons.calendar_month_rounded, color: Colors.orange.shade600, title: 'Jadwal\nPelajaran',
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => JadwalSemingguSiswaScreen(allJadwal: _allJadwal))),
-              ),
+              _buildMenuCard(icon: Icons.camera_front_rounded, color: const Color(0xFFEF4444), title: 'Presensi\n& Rekap', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AbsensiSiswaScreen()))),
+              _buildMenuCard(icon: Icons.analytics_rounded, color: const Color(0xFF3B82F6), title: 'Rapor\nSemester', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => NilaiRaporScreen(siswaId: _supabase.auth.currentUser?.id ?? '')))),
+              _buildMenuCard(icon: Icons.account_balance_wallet_rounded, color: Colors.teal.shade600, title: 'Tagihan\n& SPP', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SiswaAdministrasiScreen(siswaId: _supabase.auth.currentUser?.id ?? '')))),
+              _buildMenuCard(icon: Icons.calendar_month_rounded, color: Colors.orange.shade600, title: 'Jadwal\nPelajaran', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => JadwalSemingguSiswaScreen(allJadwal: _allJadwal)))),
             ],
           ),
           const SizedBox(height: 32),
@@ -163,25 +116,31 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
           const SizedBox(height: 16),
 
           _jadwalHariIni.isEmpty
-              ? Container(
-                  padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE2E8F0))),
-                  child: const Column(
-                    children: [
-                      Icon(Icons.auto_stories_outlined, size: 40, color: Color(0xFF94A3B8)), SizedBox(height: 12),
-                      Text('Tidak ada jadwal pelajaran aktif hari ini.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13, fontWeight: FontWeight.w500)),
-                    ],
-                  ),
-                )
+              ? Container(padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE2E8F0))), child: const Column(children: [Icon(Icons.auto_stories_outlined, size: 40, color: Color(0xFF94A3B8)), SizedBox(height: 12), Text('Tidak ada jadwal pelajaran aktif hari ini.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13, fontWeight: FontWeight.w500))]))
               : ListView.builder(
                   physics: const NeverScrollableScrollPhysics(), shrinkWrap: true, itemCount: _jadwalHariIni.length,
                   itemBuilder: (context, index) {
                     final j = _jadwalHariIni[index];
-                    
-                    // 🔥 PERBAIKAN: FORMAT JAM AGAR MUNCUL DI DASHBOARD (HH:mm)
                     String jamMulai = j['jam_mulai'] != null && j['jam_mulai'].toString().length >= 5 ? j['jam_mulai'].toString().substring(0, 5) : '00:00';
                     String jamSelesai = j['jam_selesai'] != null && j['jam_selesai'].toString().length >= 5 ? j['jam_selesai'].toString().substring(0, 5) : '00:00';
                     String guru = j['guru_pengampu'] ?? j['guru'] ?? '-';
                     String mapel = j['mata_pelajaran'] ?? j['mapel'] ?? '-';
+
+                    // 🔥 DETEKSI ISTIRAHAT UNTUK DASHBOARD SISWA
+                    bool isIstirahat = mapel.toLowerCase().contains('istirahat') || mapel.toLowerCase().contains('ishoma');
+
+                    if (isIstirahat) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.orange.shade200)),
+                        child: Row(
+                          children: [
+                            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.orange.shade100, shape: BoxShape.circle), child: Icon(Icons.fastfood, color: Colors.orange.shade800, size: 22)),
+                            const SizedBox(width: 14),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(mapel.toUpperCase(), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.orange.shade900)), const SizedBox(height: 4), Text('Waktu Istirahat: $jamMulai - $jamSelesai WIB', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange.shade700))])),
+                          ],
+                        ),
+                      );
+                    }
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF1F5F9)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.01), blurRadius: 10, offset: const Offset(0, 4))]),
@@ -189,16 +148,7 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
                         children: [
                           Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFF3B82F6).withOpacity(0.06), shape: BoxShape.circle), child: const Icon(Icons.import_contacts_rounded, color: Color(0xFF3B82F6), size: 20)),
                           const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(mapel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A))), const SizedBox(height: 4),
-                                // 🔥 TEKS JAM DITAMPILKAN DI SINI MENGGANTIKAN KATA "SESI"
-                                Text('Jam: $jamMulai - $jamSelesai WIB  •  $guru', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                              ],
-                            ),
-                          ),
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(mapel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A))), const SizedBox(height: 4), Text('Jam: $jamMulai - $jamSelesai WIB  •  $guru', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))])),
                         ],
                       ),
                     );
@@ -211,23 +161,7 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
   }
 
   Widget _buildMenuCard({required IconData icon, required Color color, required String title, required VoidCallback onTap}) {
-    return Material(
-      color: Colors.white, borderRadius: BorderRadius.circular(20), shadowColor: Colors.black.withOpacity(0.02), elevation: 2,
-      child: InkWell(
-        onTap: onTap, borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(16)), child: Icon(icon, color: color, size: 28)),
-              const SizedBox(height: 12),
-              Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A), height: 1.3)),
-            ],
-          ),
-        ),
-      ),
-    );
+    return Material(color: Colors.white, borderRadius: BorderRadius.circular(20), shadowColor: Colors.black.withOpacity(0.02), elevation: 2, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(20), child: Padding(padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(16)), child: Icon(icon, color: color, size: 28)), const SizedBox(height: 12), Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A), height: 1.3))]))));
   }
 }
 
@@ -268,22 +202,23 @@ class JadwalSemingguSiswaScreen extends StatelessWidget {
                 children: [
                   if (jadwals.isEmpty) const Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Tidak ada jadwal pelajaran', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)))
                   else ...jadwals.map((j) {
-                      
-                      // 🔥 PERBAIKAN: FORMAT JAM UNTUK DAFTAR SEMINGGU JUGA
                       String jamMulai = j['jam_mulai'] != null && j['jam_mulai'].toString().length >= 5 ? j['jam_mulai'].toString().substring(0, 5) : '00:00';
                       String jamSelesai = j['jam_selesai'] != null && j['jam_selesai'].toString().length >= 5 ? j['jam_selesai'].toString().substring(0, 5) : '00:00';
                       String guru = j['guru_pengampu'] ?? j['guru'] ?? '-';
                       String mapel = j['mata_pelajaran'] ?? j['mapel'] ?? '-';
 
+                      // 🔥 DETEKSI ISTIRAHAT UNTUK JADWAL MINGGUAN
+                      bool isIstirahat = mapel.toLowerCase().contains('istirahat') || mapel.toLowerCase().contains('ishoma');
+
                       return Container(
-                        margin: const EdgeInsets.only(left: 16, right: 16, bottom: 12), padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12)),
+                        margin: const EdgeInsets.only(left: 16, right: 16, bottom: 12), padding: const EdgeInsets.all(14), 
+                        decoration: BoxDecoration(color: isIstirahat ? Colors.orange.shade50 : const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12), border: Border.all(color: isIstirahat ? Colors.orange.shade200 : Colors.transparent)),
                         child: Row(
                           children: [
                             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(mapel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))), 
+                              Text(isIstirahat ? mapel.toUpperCase() : mapel, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isIstirahat ? Colors.orange.shade900 : const Color(0xFF0F172A))), 
                               const SizedBox(height: 4), 
-                              // 🔥 TEKS JAM DITAMPILKAN
-                              Text('Jam: $jamMulai - $jamSelesai WIB  •  $guru', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))
+                              Text(isIstirahat ? 'Waktu: $jamMulai - $jamSelesai WIB' : 'Jam: $jamMulai - $jamSelesai WIB  •  $guru', style: TextStyle(fontSize: 11, color: isIstirahat ? Colors.orange.shade800 : const Color(0xFF64748B), fontWeight: isIstirahat ? FontWeight.bold : FontWeight.normal))
                             ]))
                           ],
                         ),
@@ -299,7 +234,6 @@ class JadwalSemingguSiswaScreen extends StatelessWidget {
   }
 }
 
-// ... Kodingan DetailProfilSiswaScreen tetap sama
 class DetailProfilSiswaScreen extends StatelessWidget {
   final Map<String, dynamic> biodata;
   const DetailProfilSiswaScreen({super.key, required this.biodata});
