@@ -45,7 +45,7 @@ dependencies:
   intl: ^0.20.2
   share_plus: ^13.2.0
   google_mlkit_face_detection: ^0.11.0 # Deteksi wajah (Mata, Hidung, Mulut)
-  tflite_flutter: ^0.10.0 # Menjalankan AI FaceNet di HP
+  #tflite_flutter: ^0.10.0 # Menjalankan AI FaceNet di HP
   #supabase_flutter: ^2.5.2 # Komunikasi ke database Supabase
   shared_preferences: ^2.0.15 # Menyimpan data login secara lokal
   excel: ^4.0.6
