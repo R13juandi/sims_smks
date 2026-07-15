@@ -11,51 +11,6 @@ class TambahUserScreen extends StatefulWidget {
 
   @override
   State<TambahUserScreen> createState() => _TambahUserScreenState();
-  List<double>? _faceEmbeddingBaru;
-bool _isDaftarWajahLoading = false;
-}
-Future<void> _daftarkanWajah() async {
-  setState(() => _isDaftarWajahLoading = true);
-  final detector = FaceDetector(
-    options: FaceDetectorOptions(performanceMode: FaceDetectorMode.accurate),
-  );
-  try {
-    await FaceRecognitionService.instance.init();
-
-    final picker = ImagePicker();
-    final foto = await picker.pickImage(
-      source: ImageSource.camera,
-      preferredCameraDevice: CameraDevice.front,
-      imageQuality: 60,
-    );
-    if (foto == null) {
-      _showSnackBar('Pendaftaran wajah dibatalkan.', Colors.orange);
-      return;
-    }
-
-    final inputImage = InputImage.fromFilePath(foto.path);
-    final faces = await detector.processImage(inputImage);
-
-    if (faces.isEmpty) throw 'Wajah tidak terdeteksi, ulangi pengambilan foto.';
-    if (faces.length > 1) throw 'Terdeteksi lebih dari satu wajah, pastikan hanya satu orang di kamera.';
-
-    final embedding =
-        await FaceRecognitionService.instance.getEmbedding(File(foto.path), faces.first);
-    if (embedding == null) throw 'Gagal memproses wajah, coba ulangi.';
-
-    setState(() => _faceEmbeddingBaru = embedding);
-    _showSnackBar('Wajah berhasil didaftarkan! Lanjutkan mengisi form.', Colors.green);
-  } catch (e) {
-    _showSnackBar('Gagal mendaftarkan wajah: $e', Colors.red);
-  } finally {
-    detector.close();
-    if (mounted) setState(() => _isDaftarWajahLoading = false);
-  }
-}
-
-void _showSnackBar(String pesan, Color warna) {
-  if (!mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(pesan), backgroundColor: warna));
 }
 
 class _TambahUserScreenState extends State<TambahUserScreen> {
@@ -63,6 +18,10 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
   final _formKey = GlobalKey<FormState>();
 
   bool _isLoading = false;
+  
+  // 🔥 VARIABEL WAJAH SUDAH DIMASUKKAN KE DALAM STATE
+  List<double>? _faceEmbeddingBaru;
+  bool _isDaftarWajahLoading = false;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -103,13 +62,31 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
 
   @override
   void dispose() {
-    _emailController.dispose(); _passwordController.dispose(); _namaController.dispose(); _tempatLahirController.dispose(); _alamatController.dispose(); _nikController.dispose(); _nipdController.dispose(); _nisnController.dispose(); _hpController.dispose(); super.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _namaController.dispose();
+    _tempatLahirController.dispose();
+    _alamatController.dispose();
+    _nikController.dispose();
+    _nipdController.dispose();
+    _nisnController.dispose();
+    _hpController.dispose();
+    super.dispose();
+  }
+
+  void _showSnackBar(String pesan, Color warna) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(pesan), backgroundColor: warna));
   }
 
   Future<void> _fetchMataPelajaran() async {
     try {
       final res = await _supabase.from('mata_pelajaran').select('nama_mapel').order('nama_mapel', ascending: true);
-      if (res.isEmpty) { _gunakanMapelDefault(); } else { setState(() { _daftarMapelDinamis = List<String>.from(res.map((m) => m['nama_mapel'])); }); }
+      if (res.isEmpty) { 
+        _gunakanMapelDefault(); 
+      } else { 
+        setState(() { _daftarMapelDinamis = List<String>.from(res.map((m) => m['nama_mapel'])); }); 
+      }
     } catch (e) {
       _gunakanMapelDefault();
     }
@@ -117,8 +94,55 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
 
   void _gunakanMapelDefault() {
     setState(() {
-      _daftarMapelDinamis = ['PAI dan Budi Pekerti', 'PPKN', 'Bahasa Indonesia', 'Matematika', 'Bahasa Inggris', 'Sejarah', 'PJOK', 'Seni Budaya', 'Project IPAS', 'Informatika', 'Kejuruan TKJ', 'KKA (Koding dan Kecerdasan AI)', 'Produk Kreatif dan Kewirausahaan', 'Muatan Lokal'];
+      _daftarMapelDinamis = [
+        'PAI dan Budi Pekerti', 'PPKN', 'Bahasa Indonesia', 'Matematika', 'Bahasa Inggris', 
+        'Sejarah', 'PJOK', 'Seni Budaya', 'Project IPAS', 'Informatika', 'Kejuruan TKJ', 
+        'KKA (Koding dan Kecerdasan AI)', 'Produk Kreatif dan Kewirausahaan', 'Muatan Lokal'
+      ];
     });
+  }
+
+  // 🔥 FUNGSI DAFTAR WAJAH SUDAH DIMASUKKAN KE DALAM STATE
+  Future<void> _daftarkanWajah() async {
+    setState(() => _isDaftarWajahLoading = true);
+    
+    final detector = FaceDetector(
+      options: FaceDetectorOptions(performanceMode: FaceDetectorMode.accurate),
+    );
+    
+    try {
+      await FaceRecognitionService.instance.init();
+
+      final picker = ImagePicker();
+      final foto = await picker.pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.front,
+        imageQuality: 60,
+      );
+      
+      if (foto == null) {
+        _showSnackBar('Pendaftaran wajah dibatalkan.', Colors.orange);
+        return;
+      }
+
+      final inputImage = InputImage.fromFilePath(foto.path);
+      final faces = await detector.processImage(inputImage);
+
+      if (faces.isEmpty) throw 'Wajah tidak terdeteksi, ulangi pengambilan foto.';
+      if (faces.length > 1) throw 'Terdeteksi lebih dari satu wajah, pastikan hanya satu orang di kamera.';
+
+      final embedding = await FaceRecognitionService.instance.getEmbedding(File(foto.path), faces.first);
+      if (embedding == null) throw 'Gagal memproses wajah, coba ulangi.';
+
+      setState(() => _faceEmbeddingBaru = embedding);
+      _showSnackBar('Wajah berhasil didaftarkan! Lanjutkan mengisi form.', Colors.green);
+      
+    } catch (e) {
+      _showSnackBar('Gagal mendaftarkan wajah: $e', Colors.red);
+    } finally {
+      detector.close();
+      if (mounted) setState(() => _isDaftarWajahLoading = false);
+    }
   }
 
   void _showMultiSelectMapel() async {
@@ -187,13 +211,21 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
 
   Future<void> _prosesRegistrasiUser() async {
     if ((_selectedRole == 'siswa' || _selectedRole == 'guru') && _faceEmbeddingBaru == null) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Wajib daftarkan wajah terlebih dahulu untuk siswa/guru!')));
-  return;
-}
+      _showSnackBar('Wajib daftarkan wajah terlebih dahulu untuk siswa/guru!', Colors.orange);
+      return;
+    }
+    
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedRole == 'siswa' && _selectedKelasSiswa == null) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Silakan pilih kelas siswa!'))); return; }
-    if (_selectedRole == 'guru' && (_selectedMapelGuru.isEmpty || _selectedKelasGuru.isEmpty)) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Guru wajib memiliki minimal 1 mapel & 1 kelas!'))); return; }
+    
+    if (_selectedRole == 'siswa' && _selectedKelasSiswa == null) { 
+      _showSnackBar('Silakan pilih kelas siswa!', Colors.orange); 
+      return; 
+    }
+    
+    if (_selectedRole == 'guru' && (_selectedMapelGuru.isEmpty || _selectedKelasGuru.isEmpty)) { 
+      _showSnackBar('Guru wajib memiliki minimal 1 mapel & 1 kelas!', Colors.orange); 
+      return; 
+    }
 
     setState(() => _isLoading = true);
 
@@ -203,16 +235,23 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
 
       if (newUserId != null) {
         Map<String, dynamic> profileData = {
-  'id': newUserId, 'full_name': _namaController.text.trim(), 'role': _selectedRole,
-  'email': _emailController.text.trim(), 'status_aktif': true,
-  'nomor_hp': _hpController.text.trim(), 'alamat': _alamatController.text.trim(),
-  'agama': _selectedAgama, 'jenis_kelamin': _selectedJK,
-  if (_faceEmbeddingBaru != null)
-    'face_baseline': FaceRecognitionService.instance.encodeEmbedding(_faceEmbeddingBaru!),
-};
+          'id': newUserId, 
+          'full_name': _namaController.text.trim(), 
+          'role': _selectedRole,
+          'email': _emailController.text.trim(), 
+          'status_aktif': true,
+          'nomor_hp': _hpController.text.trim(), 
+          'alamat': _alamatController.text.trim(),
+          'agama': _selectedAgama, 
+          'jenis_kelamin': _selectedJK,
+          if (_faceEmbeddingBaru != null)
+            'face_baseline': FaceRecognitionService.instance.encodeEmbedding(_faceEmbeddingBaru!),
+        };
 
         if (_selectedRole == 'guru') {
-          profileData['mapel'] = _selectedMapelGuru; profileData['kelas_mengajar'] = _selectedKelasGuru; profileData['nik'] = _nikController.text.trim();
+          profileData['mapel'] = _selectedMapelGuru; 
+          profileData['kelas_mengajar'] = _selectedKelasGuru; 
+          profileData['nik'] = _nikController.text.trim();
         }
 
         if (_selectedRole == 'siswa') {
@@ -225,12 +264,12 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
 
         await _supabase.from('profiles').insert(profileData);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Akun ${_selectedRole.toUpperCase()} sukses diterbitkan!'), backgroundColor: Colors.green));
+        _showSnackBar('Akun ${_selectedRole.toUpperCase()} sukses diterbitkan!', Colors.green);
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e'), backgroundColor: Colors.red));
+      _showSnackBar('Gagal: $e', Colors.red);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -291,24 +330,22 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                     ],
 
                     const SizedBox(height: 20),
-const Text('PENDAFTARAN WAJAH (UNTUK PRESENSI CNN)',
-    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E40AF))),
-const SizedBox(height: 8),
-OutlinedButton.icon(
-  onPressed: _isDaftarWajahLoading ? null : _daftarkanWajah,
-  icon: _isDaftarWajahLoading
-      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-      : Icon(_faceEmbeddingBaru != null ? Icons.check_circle : Icons.face_retouching_natural,
-          color: _faceEmbeddingBaru != null ? Colors.green : Colors.blue),
-  label: Text(_faceEmbeddingBaru != null ? 'Wajah Terdaftar ✓' : 'Ambil Foto Wajah (Wajib)'),
-  style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
-),
-if (_faceEmbeddingBaru == null)
-  const Padding(
-    padding: EdgeInsets.only(top: 6),
-    child: Text('*Wajib untuk siswa/guru agar bisa presensi Smart Scan.',
-        style: TextStyle(color: Colors.red, fontSize: 11)),
-  ),  
+                    const Text('PENDAFTARAN WAJAH (UNTUK PRESENSI CNN)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E40AF))),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: _isDaftarWajahLoading ? null : _daftarkanWajah,
+                      icon: _isDaftarWajahLoading
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : Icon(_faceEmbeddingBaru != null ? Icons.check_circle : Icons.face_retouching_natural,
+                              color: _faceEmbeddingBaru != null ? Colors.green : Colors.blue),
+                      label: Text(_faceEmbeddingBaru != null ? 'Wajah Terdaftar ✓' : 'Ambil Foto Wajah (Wajib)'),
+                      style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+                    ),
+                    if (_faceEmbeddingBaru == null)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text('*Wajib untuk siswa/guru agar bisa presensi Smart Scan.', style: TextStyle(color: Colors.red, fontSize: 11)),
+                      ),  
 
                     const SizedBox(height: 32),
                     ElevatedButton(
