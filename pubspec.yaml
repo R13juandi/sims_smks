@@ -42,7 +42,7 @@ dependencies:
   image_picker: ^1.2.3 # Untuk upload foto absen
   geolocator: ^13.0.2
   intl: ^0.20.2
-  share_plus: ^7.1.0
+  share_plus: ^13.2.0
   google_mlkit_face_detection: ^0.11.0 # Deteksi wajah (Mata, Hidung, Mulut)
   tflite_flutter: ^0.10.0 # Menjalankan AI FaceNet di HP
   #supabase_flutter: ^2.5.2 # Komunikasi ke database Supabase
