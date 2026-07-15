@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:intl/intl.dart';
 import '../login_screen.dart';
 import 'absensi_siswa_screen.dart';
 import 'nilai_rapor_screen.dart';
-import 'siswa_administrasi_screen.dart'; 
+import 'siswa_administrasi_screen.dart';
 
 class SiswaDashboard extends StatefulWidget {
   const SiswaDashboard({super.key});
@@ -13,9 +12,11 @@ class SiswaDashboard extends StatefulWidget {
   State<SiswaDashboard> createState() => _SiswaDashboardState();
 }
 
-class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStateMixin {
+class _SiswaDashboardState extends State<SiswaDashboard>
+    with TickerProviderStateMixin {
   final _supabase = Supabase.instance.client;
   bool _isLoading = true;
+  String? _errorMessage;
 
   Map<String, dynamic> _biodataSiswa = {};
   List<Map<String, dynamic>> _allJadwal = [];
@@ -29,139 +30,585 @@ class _SiswaDashboardState extends State<SiswaDashboard> with TickerProviderStat
 
   String _getNamaHariIni() {
     final now = DateTime.now();
-    switch (now.weekday) {
-      case 1: return 'Senin'; case 2: return 'Selasa'; case 3: return 'Rabu'; case 4: return 'Kamis'; case 5: return 'Jumat'; case 6: return 'Sabtu'; default: return 'Minggu';
-    }
+    const hari = [
+      'Senin',
+      'Selasa',
+      'Rabu',
+      'Kamis',
+      'Jumat',
+      'Sabtu',
+      'Minggu',
+    ];
+    return hari[now.weekday - 1];
+  }
+
+  // Normalisasi string kelas supaya pencocokan "X TKJ" vs "10 TKJ" tetap match
+  bool _kelasCocok(String kelasJadwal, String kelasSiswa) {
+    final kj = kelasJadwal.toLowerCase().trim();
+    final ks = kelasSiswa.toLowerCase().trim();
+    if (kj.isEmpty || ks.isEmpty) return false;
+    if (kj == ks) return true;
+
+    bool cekTingkat(String s, List<String> keys) =>
+        keys.any((k) => s.contains(k));
+
+    if (cekTingkat(ks, ['10', 'x '])) return cekTingkat(kj, ['10', 'x ']);
+    if (cekTingkat(ks, ['11', 'xi'])) return cekTingkat(kj, ['11', 'xi']);
+    if (cekTingkat(ks, ['12', 'xii'])) return cekTingkat(kj, ['12', 'xii']);
+    return false;
   }
 
   Future<void> _loadSiswaData() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
       final user = _supabase.auth.currentUser;
-      if (user == null) return;
+      if (user == null) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Sesi login tidak ditemukan.';
+        });
+        return;
+      }
 
-      final profileRes = await _supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
-      if (profileRes != null) _biodataSiswa = profileRes;
+      final profileRes = await _supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
 
-      final jadwalRes = await _supabase.from('jadwal').select('*').order('jam_mulai', ascending: true);
-      final listJadwal = List<Map<String, dynamic>>.from(jadwalRes);
-      String kelasSiswa = (_biodataSiswa['kelas'] ?? '').toString().toLowerCase().trim();
+      _biodataSiswa = profileRes ?? {};
+
+      final jadwalRes = await _supabase
+          .from('jadwal')
+          .select('*')
+          .order('jam_mulai', ascending: true);
+
+      final listJadwal = List<Map<String, dynamic>>.from(jadwalRes as List);
+      final kelasSiswa = (_biodataSiswa['kelas'] ?? '').toString();
 
       _allJadwal = listJadwal.where((j) {
-        String kelasJadwal = (j['kelas'] ?? '').toString().toLowerCase().trim();
-        if (kelasJadwal == kelasSiswa) return true;
-        if (kelasSiswa.contains('10') || kelasSiswa.contains('x ')) return kelasJadwal.contains('10') || kelasJadwal.contains('x');
-        else if (kelasSiswa.contains('11') || kelasSiswa.contains('xi')) return kelasJadwal.contains('11') || kelasJadwal.contains('xi');
-        else if (kelasSiswa.contains('12') || kelasSiswa.contains('xii')) return kelasJadwal.contains('12') || kelasJadwal.contains('xii');
-        return false;
+        final kelasJadwal = (j['kelas'] ?? '').toString();
+        return _kelasCocok(kelasJadwal, kelasSiswa);
       }).toList();
 
       final hariIni = _getNamaHariIni();
-      _jadwalHariIni = _allJadwal.where((j) => j['hari'] == hariIni).toList();
+      _jadwalHariIni = _allJadwal
+          .where((j) => (j['hari'] ?? '') == hariIni)
+          .toList();
 
-      setState(() { _isLoading = false; });
-    } catch (e) { setState(() { _isLoading = false; }); }
+      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      debugPrint('Error _loadSiswaData: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Gagal memuat data. Periksa koneksi internet Anda.';
+        });
+      }
+    }
+  }
+
+  Future<void> _logout() async {
+    try {
+      await _supabase.auth.signOut();
+    } catch (e) {
+      debugPrint('Error logout: $e');
+    } finally {
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return const Scaffold(backgroundColor: Color(0xFFF8FAFC), body: Center(child: CircularProgressIndicator(color: Color(0xFF1E3A8A))));
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF8FAFC),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF1E3A8A)),
+        ),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.wifi_off_rounded,
+                  size: 48,
+                  color: Colors.grey.shade400,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: _loadSiswaData,
+                  child: const Text('Coba Lagi'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final hariIni = _getNamaHariIni();
+    final namaLengkap = (_biodataSiswa['full_name'] ?? 'Siswa').toString();
+    final kelas = (_biodataSiswa['kelas'] ?? '-').toString();
+    final nisn = (_biodataSiswa['nisn'] ?? '-').toString();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('SIMS SMK TI', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, letterSpacing: 0.5, color: Color(0xFF0F172A))),
-        backgroundColor: Colors.white, centerTitle: false, elevation: 0,
+        title: const Text(
+          'SIMS SMK TI',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+            letterSpacing: 0.5,
+            color: Color(0xFF0F172A),
+          ),
+        ),
+        backgroundColor: Colors.white,
+        centerTitle: false,
+        elevation: 0,
         actions: [
           Container(
-            margin: const EdgeInsets.only(right: 12), decoration: BoxDecoration(color: Colors.red[50], shape: BoxShape.circle),
-            child: IconButton(icon: Icon(Icons.logout_rounded, color: Colors.red[600], size: 20), tooltip: 'Keluar Aplikasi', onPressed: () async { await _supabase.auth.signOut(); if (!mounted) return; Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const LoginScreen()), (route) => false); }),
+            margin: const EdgeInsets.only(right: 12),
+            decoration: BoxDecoration(
+              color: Colors.red[50],
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              icon: Icon(
+                Icons.logout_rounded,
+                color: Colors.red[600],
+                size: 20,
+              ),
+              tooltip: 'Keluar Aplikasi',
+              onPressed: _logout,
+            ),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        children: [
-          Card(
-            elevation: 8, shadowColor: const Color(0xFF1E3A8A).withOpacity(0.3), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)), clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: () { Navigator.push(context, MaterialPageRoute(builder: (context) => DetailProfilSiswaScreen(biodata: _biodataSiswa))); },
-              child: Container(
-                width: double.infinity, padding: const EdgeInsets.all(24), decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
-                child: Row(
-                  children: [
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Selamat Datang Kembali,', style: TextStyle(fontSize: 14, color: Colors.white70)), const SizedBox(height: 4), Text(_biodataSiswa['full_name'] ?? 'Siswa', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.5)), const SizedBox(height: 16), Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(30)), child: Text('Kelas ${_biodataSiswa['kelas'] ?? '-'}  •  NISN ${_biodataSiswa['nisn'] ?? '-'}', style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w500)))])),
-                    const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 20),
-                  ],
+      body: RefreshIndicator(
+        onRefresh: _loadSiswaData,
+        child: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          children: [
+            Card(
+              elevation: 8,
+              shadowColor: const Color(0xFF1E3A8A).withOpacity(0.3),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        DetailProfilSiswaScreen(biodata: _biodataSiswa),
+                  ),
+                ),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(24),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Selamat Datang Kembali,',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.white70,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              namaLengkap,
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(30),
+                              ),
+                              child: Text(
+                                'Kelas $kelas  •  NISN $nisn',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        color: Colors.white70,
+                        size: 20,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 32),
-          const Text('Menu Akademik', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-          const SizedBox(height: 16),
-
-          GridView.count(
-            crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 1.15,
-            children: [
-              _buildMenuCard(icon: Icons.camera_front_rounded, color: const Color(0xFFEF4444), title: 'Presensi\n& Rekap', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AbsensiSiswaScreen()))),
-              _buildMenuCard(icon: Icons.analytics_rounded, color: const Color(0xFF3B82F6), title: 'Rapor\nSemester', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => NilaiRaporScreen(siswaId: _supabase.auth.currentUser?.id ?? '')))),
-              _buildMenuCard(icon: Icons.account_balance_wallet_rounded, color: Colors.teal.shade600, title: 'Tagihan\n& SPP', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SiswaAdministrasiScreen(siswaId: _supabase.auth.currentUser?.id ?? '')))),
-              _buildMenuCard(icon: Icons.calendar_month_rounded, color: Colors.orange.shade600, title: 'Jadwal\nPelajaran', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => JadwalSemingguSiswaScreen(allJadwal: _allJadwal)))),
-            ],
-          ),
-          const SizedBox(height: 32),
-
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Jadwal Hari Ini ($hariIni)', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)))]),
-          const SizedBox(height: 16),
-
-          _jadwalHariIni.isEmpty
-              ? Container(padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE2E8F0))), child: const Column(children: [Icon(Icons.auto_stories_outlined, size: 40, color: Color(0xFF94A3B8)), SizedBox(height: 12), Text('Tidak ada jadwal pelajaran aktif hari ini.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13, fontWeight: FontWeight.w500))]))
-              : ListView.builder(
-                  physics: const NeverScrollableScrollPhysics(), shrinkWrap: true, itemCount: _jadwalHariIni.length,
-                  itemBuilder: (context, index) {
-                    final j = _jadwalHariIni[index];
-                    String jamMulai = j['jam_mulai'] != null && j['jam_mulai'].toString().length >= 5 ? j['jam_mulai'].toString().substring(0, 5) : '00:00';
-                    String jamSelesai = j['jam_selesai'] != null && j['jam_selesai'].toString().length >= 5 ? j['jam_selesai'].toString().substring(0, 5) : '00:00';
-                    String guru = j['guru_pengampu'] ?? j['guru'] ?? '-';
-                    String mapel = j['mata_pelajaran'] ?? j['mapel'] ?? '-';
-
-                    // 🔥 DETEKSI ISTIRAHAT UNTUK DASHBOARD SISWA
-                    bool isIstirahat = mapel.toLowerCase().contains('istirahat') || mapel.toLowerCase().contains('ishoma');
-
-                    if (isIstirahat) {
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.orange.shade200)),
-                        child: Row(
-                          children: [
-                            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.orange.shade100, shape: BoxShape.circle), child: Icon(Icons.fastfood, color: Colors.orange.shade800, size: 22)),
-                            const SizedBox(width: 14),
-                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(mapel.toUpperCase(), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.orange.shade900)), const SizedBox(height: 4), Text('Waktu Istirahat: $jamMulai - $jamSelesai WIB', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange.shade700))])),
-                          ],
-                        ),
-                      );
+            const SizedBox(height: 32),
+            const Text(
+              'Menu Akademik',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1E293B),
+              ),
+            ),
+            const SizedBox(height: 16),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: 1.15,
+              children: [
+                _buildMenuCard(
+                  icon: Icons.camera_front_rounded,
+                  color: const Color(0xFFEF4444),
+                  title: 'Presensi\n& Rekap',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AbsensiSiswaScreen(),
+                    ),
+                  ),
+                ),
+                _buildMenuCard(
+                  icon: Icons.analytics_rounded,
+                  color: const Color(0xFF3B82F6),
+                  title: 'Rapor\nSemester',
+                  onTap: () {
+                    final uid = _supabase.auth.currentUser?.id;
+                    if (uid == null) {
+                      _showSnackBar('Sesi login tidak ditemukan.', Colors.red);
+                      return;
                     }
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF1F5F9)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.01), blurRadius: 10, offset: const Offset(0, 4))]),
-                      child: Row(
-                        children: [
-                          Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFF3B82F6).withOpacity(0.06), shape: BoxShape.circle), child: const Icon(Icons.import_contacts_rounded, color: Color(0xFF3B82F6), size: 20)),
-                          const SizedBox(width: 14),
-                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(mapel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A))), const SizedBox(height: 4), Text('Jam: $jamMulai - $jamSelesai WIB  •  $guru', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))])),
-                        ],
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => NilaiRaporScreen(siswaId: uid),
                       ),
                     );
                   },
                 ),
-          const SizedBox(height: 20),
-        ],
+                _buildMenuCard(
+                  icon: Icons.account_balance_wallet_rounded,
+                  color: Colors.teal.shade600,
+                  title: 'Tagihan\n& SPP',
+                  onTap: () {
+                    final uid = _supabase.auth.currentUser?.id;
+                    if (uid == null) {
+                      _showSnackBar('Sesi login tidak ditemukan.', Colors.red);
+                      return;
+                    }
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            SiswaAdministrasiScreen(siswaId: uid),
+                      ),
+                    );
+                  },
+                ),
+                _buildMenuCard(
+                  icon: Icons.calendar_month_rounded,
+                  color: Colors.orange.shade600,
+                  title: 'Jadwal\nPelajaran',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          JadwalSemingguSiswaScreen(allJadwal: _allJadwal),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            Text(
+              'Jadwal Hari Ini ($hariIni)',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1E293B),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _jadwalHariIni.isEmpty
+                ? Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 32,
+                      horizontal: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: const Column(
+                      children: [
+                        Icon(
+                          Icons.auto_stories_outlined,
+                          size: 40,
+                          color: Color(0xFF94A3B8),
+                        ),
+                        SizedBox(height: 12),
+                        Text(
+                          'Tidak ada jadwal pelajaran aktif hari ini.',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    physics: const NeverScrollableScrollPhysics(),
+                    shrinkWrap: true,
+                    itemCount: _jadwalHariIni.length,
+                    itemBuilder: (context, index) {
+                      final j = _jadwalHariIni[index];
+                      final jamMulaiRaw = (j['jam_mulai'] ?? '00:00')
+                          .toString();
+                      final jamSelesaiRaw = (j['jam_selesai'] ?? '00:00')
+                          .toString();
+                      final jamMulai = jamMulaiRaw.length >= 5
+                          ? jamMulaiRaw.substring(0, 5)
+                          : jamMulaiRaw;
+                      final jamSelesai = jamSelesaiRaw.length >= 5
+                          ? jamSelesaiRaw.substring(0, 5)
+                          : jamSelesaiRaw;
+                      final guru = (j['guru_pengampu'] ?? j['guru'] ?? '-')
+                          .toString();
+                      final mapel = (j['mata_pelajaran'] ?? j['mapel'] ?? '-')
+                          .toString();
+                      final isIstirahat =
+                          mapel.toLowerCase().contains('istirahat') ||
+                          mapel.toLowerCase().contains('ishoma');
+
+                      if (isIstirahat) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.orange.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade100,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.fastfood,
+                                  color: Colors.orange.shade800,
+                                  size: 22,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      mapel.toUpperCase(),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: Colors.orange.shade900,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Waktu Istirahat: $jamMulai - $jamSelesai WIB',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.orange.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFF1F5F9)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.01),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(
+                                  0xFF3B82F6,
+                                ).withOpacity(0.06),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.import_contacts_rounded,
+                                color: Color(0xFF3B82F6),
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    mapel,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Jam: $jamMulai - $jamSelesai WIB  •  $guru',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+            const SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildMenuCard({required IconData icon, required Color color, required String title, required VoidCallback onTap}) {
-    return Material(color: Colors.white, borderRadius: BorderRadius.circular(20), shadowColor: Colors.black.withOpacity(0.02), elevation: 2, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(20), child: Padding(padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(16)), child: Icon(icon, color: color, size: 28)), const SizedBox(height: 12), Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A), height: 1.3))]))));
+  void _showSnackBar(String pesan, Color warna) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(pesan), backgroundColor: warna));
+  }
+
+  Widget _buildMenuCard({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      shadowColor: Colors.black.withOpacity(0.02),
+      elevation: 2,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, color: color, size: 28),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: Color(0xFF0F172A),
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -171,59 +618,176 @@ class JadwalSemingguSiswaScreen extends StatelessWidget {
 
   String _getNamaHariIni() {
     final now = DateTime.now();
-    switch (now.weekday) {
-      case 1: return 'Senin'; case 2: return 'Selasa'; case 3: return 'Rabu'; case 4: return 'Kamis'; case 5: return 'Jumat'; case 6: return 'Sabtu'; default: return 'Minggu';
-    }
+    const hari = [
+      'Senin',
+      'Selasa',
+      'Rabu',
+      'Kamis',
+      'Jumat',
+      'Sabtu',
+      'Minggu',
+    ];
+    return hari[now.weekday - 1];
   }
 
   @override
   Widget build(BuildContext context) {
-    final List<String> listHari = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const listHari = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
     final hariIni = _getNamaHariIni();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(title: const Text('Jadwal Pelajaran Mingguan', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)), backgroundColor: Colors.white, elevation: 0.5, leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.black), onPressed: () => Navigator.pop(context))),
+      appBar: AppBar(
+        title: const Text(
+          'Jadwal Pelajaran Mingguan',
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20), itemCount: listHari.length,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+        itemCount: listHari.length,
         itemBuilder: (context, index) {
           final hari = listHari[index];
-          final jadwals = allJadwal.where((j) => j['hari'] == hari).toList();
+          final jadwals = allJadwal
+              .where((j) => (j['hari'] ?? '') == hari)
+              .toList();
           final bool isHariIni = hari == hariIni;
 
           if (jadwals.isEmpty && !isHariIni) return const SizedBox.shrink();
 
           return Container(
-            margin: const EdgeInsets.only(bottom: 12), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: isHariIni ? const Color(0xFF3B82F6) : const Color(0xFFF1F5F9), width: isHariIni ? 1.5 : 1)),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isHariIni
+                    ? const Color(0xFF3B82F6)
+                    : const Color(0xFFF1F5F9),
+                width: isHariIni ? 1.5 : 1,
+              ),
+            ),
             child: Theme(
-              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
-                initiallyExpanded: isHariIni, leading: Icon(Icons.circle, size: 10, color: isHariIni ? const Color(0xFF3B82F6) : const Color(0xFFCBD5E1)), title: Text(hari, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isHariIni ? const Color(0xFF1D4ED8) : const Color(0xFF1E293B))),
+                initiallyExpanded: isHariIni,
+                leading: Icon(
+                  Icons.circle,
+                  size: 10,
+                  color: isHariIni
+                      ? const Color(0xFF3B82F6)
+                      : const Color(0xFFCBD5E1),
+                ),
+                title: Text(
+                  hari,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: isHariIni
+                        ? const Color(0xFF1D4ED8)
+                        : const Color(0xFF1E293B),
+                  ),
+                ),
                 children: [
-                  if (jadwals.isEmpty) const Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Tidak ada jadwal pelajaran', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)))
-                  else ...jadwals.map((j) {
-                      String jamMulai = j['jam_mulai'] != null && j['jam_mulai'].toString().length >= 5 ? j['jam_mulai'].toString().substring(0, 5) : '00:00';
-                      String jamSelesai = j['jam_selesai'] != null && j['jam_selesai'].toString().length >= 5 ? j['jam_selesai'].toString().substring(0, 5) : '00:00';
-                      String guru = j['guru_pengampu'] ?? j['guru'] ?? '-';
-                      String mapel = j['mata_pelajaran'] ?? j['mapel'] ?? '-';
-
-                      // 🔥 DETEKSI ISTIRAHAT UNTUK JADWAL MINGGUAN
-                      bool isIstirahat = mapel.toLowerCase().contains('istirahat') || mapel.toLowerCase().contains('ishoma');
+                  if (jadwals.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        'Tidak ada jadwal pelajaran',
+                        style: TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 12,
+                        ),
+                      ),
+                    )
+                  else
+                    ...jadwals.map((j) {
+                      final jamMulaiRaw = (j['jam_mulai'] ?? '00:00')
+                          .toString();
+                      final jamSelesaiRaw = (j['jam_selesai'] ?? '00:00')
+                          .toString();
+                      final jamMulai = jamMulaiRaw.length >= 5
+                          ? jamMulaiRaw.substring(0, 5)
+                          : jamMulaiRaw;
+                      final jamSelesai = jamSelesaiRaw.length >= 5
+                          ? jamSelesaiRaw.substring(0, 5)
+                          : jamSelesaiRaw;
+                      final guru = (j['guru_pengampu'] ?? j['guru'] ?? '-')
+                          .toString();
+                      final mapel = (j['mata_pelajaran'] ?? j['mapel'] ?? '-')
+                          .toString();
+                      final isIstirahat =
+                          mapel.toLowerCase().contains('istirahat') ||
+                          mapel.toLowerCase().contains('ishoma');
 
                       return Container(
-                        margin: const EdgeInsets.only(left: 16, right: 16, bottom: 12), padding: const EdgeInsets.all(14), 
-                        decoration: BoxDecoration(color: isIstirahat ? Colors.orange.shade50 : const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12), border: Border.all(color: isIstirahat ? Colors.orange.shade200 : Colors.transparent)),
+                        margin: const EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          bottom: 12,
+                        ),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isIstirahat
+                              ? Colors.orange.shade50
+                              : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isIstirahat
+                                ? Colors.orange.shade200
+                                : Colors.transparent,
+                          ),
+                        ),
                         child: Row(
                           children: [
-                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(isIstirahat ? mapel.toUpperCase() : mapel, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isIstirahat ? Colors.orange.shade900 : const Color(0xFF0F172A))), 
-                              const SizedBox(height: 4), 
-                              Text(isIstirahat ? 'Waktu: $jamMulai - $jamSelesai WIB' : 'Jam: $jamMulai - $jamSelesai WIB  •  $guru', style: TextStyle(fontSize: 11, color: isIstirahat ? Colors.orange.shade800 : const Color(0xFF64748B), fontWeight: isIstirahat ? FontWeight.bold : FontWeight.normal))
-                            ]))
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    isIstirahat ? mapel.toUpperCase() : mapel,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color: isIstirahat
+                                          ? Colors.orange.shade900
+                                          : const Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    isIstirahat
+                                        ? 'Waktu: $jamMulai - $jamSelesai WIB'
+                                        : 'Jam: $jamMulai - $jamSelesai WIB  •  $guru',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isIstirahat
+                                          ? Colors.orange.shade800
+                                          : const Color(0xFF64748B),
+                                      fontWeight: isIstirahat
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       );
-                    }).toList(),
+                    }),
                 ],
               ),
             ),
@@ -241,65 +805,208 @@ class DetailProfilSiswaScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     String tglLahirFormatted = '-';
-    if (biodata['tanggal_lahir'] != null) {
-      try { DateTime tgl = DateTime.parse(biodata['tanggal_lahir']); tglLahirFormatted = DateFormat('dd MMMM yyyy').format(tgl); } catch (_) {}
+    final rawTgl = biodata['tanggal_lahir'];
+    if (rawTgl != null && rawTgl.toString().isNotEmpty) {
+      try {
+        final tgl = DateTime.parse(rawTgl.toString());
+        const bulan = [
+          'Januari',
+          'Februari',
+          'Maret',
+          'April',
+          'Mei',
+          'Juni',
+          'Juli',
+          'Agustus',
+          'September',
+          'Oktober',
+          'November',
+          'Desember',
+        ];
+        tglLahirFormatted = '${tgl.day} ${bulan[tgl.month - 1]} ${tgl.year}';
+      } catch (_) {
+        tglLahirFormatted = '-';
+      }
     }
 
-    final String nama = biodata['full_name'] ?? 'Siswa';
-    final String kelas = biodata['kelas'] ?? '-';
-    final String nisn = biodata['nisn'] ?? '-';
-    final String nipd = biodata['nipd'] ?? '-';
-    final String nik = biodata['nik'] ?? '-';
-    final String jk = biodata['jk'] ?? biodata['jenis_kelamin'] ?? '-';
-    final String agama = biodata['agama'] ?? '-';
-    final String noHp = biodata['no_hp'] ?? biodata['nomor_hp'] ?? '-';
-    final String domisili = biodata['alamat'] ?? biodata['alamat_domisili'] ?? '-';
-    final String tempatLahir = biodata['tempat_lahir'] ?? '';
+    final nama = (biodata['full_name'] ?? 'Siswa').toString();
+    final kelas = (biodata['kelas'] ?? '-').toString();
+    final nisn = (biodata['nisn'] ?? '-').toString();
+    final nipd = (biodata['nipd'] ?? '-').toString();
+    final nik = (biodata['nik'] ?? '-').toString();
+    final jk = (biodata['jk'] ?? biodata['jenis_kelamin'] ?? '-').toString();
+    final agama = (biodata['agama'] ?? '-').toString();
+    final noHp = (biodata['no_hp'] ?? biodata['nomor_hp'] ?? '-').toString();
+    final domisili = (biodata['alamat'] ?? biodata['alamat_domisili'] ?? '-')
+        .toString();
+    final tempatLahir = (biodata['tempat_lahir'] ?? '').toString();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(title: const Text('Profil Data Diri Siswa', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)), backgroundColor: Colors.white, elevation: 0.5, leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.black), onPressed: () => Navigator.pop(context))),
+      appBar: AppBar(
+        title: const Text(
+          'Profil Data Diri Siswa',
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         children: [
           Center(
             child: Column(
               children: [
-                Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF3B82F6), width: 2)), child: CircleAvatar(radius: 40, backgroundColor: const Color(0xFF1E3A8A).withOpacity(0.1), child: const Icon(Icons.person_rounded, size: 45, color: Color(0xFF1E3A8A)))),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFF3B82F6),
+                      width: 2,
+                    ),
+                  ),
+                  child: CircleAvatar(
+                    radius: 40,
+                    backgroundColor: const Color(0xFF1E3A8A).withOpacity(0.1),
+                    child: const Icon(
+                      Icons.person_rounded,
+                      size: 45,
+                      color: Color(0xFF1E3A8A),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 12),
-                Text(nama, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)), textAlign: TextAlign.center),
-                const SizedBox(height: 4), Text('Status: Siswa Aktif', style: TextStyle(fontSize: 12, color: Colors.green[700], fontWeight: FontWeight.w500)),
+                Text(
+                  nama,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF0F172A),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Status: Siswa Aktif',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.green[700],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
           ),
           const SizedBox(height: 32),
-          const Text('INFORMASI DATA AKADEMIK', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E40AF), letterSpacing: 0.5)),
+          const Text(
+            'INFORMASI DATA AKADEMIK',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              color: Color(0xFF1E40AF),
+              letterSpacing: 0.5,
+            ),
+          ),
           const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFF1F5F9)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.01), blurRadius: 20, offset: const Offset(0, 4))]),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFF1F5F9)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.01),
+                  blurRadius: 20,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _itemProfil(Icons.school_rounded, 'Kelas Aktif', kelas), const Divider(height: 24),
-                _itemProfil(Icons.badge_rounded, 'NIPD (Nomor Induk Peserta Didik)', nipd), const Divider(height: 24),
-                _itemProfil(Icons.fingerprint_rounded, 'NISN (Nomor Induk Siswa Nasional)', nisn),
+                _itemProfil(Icons.school_rounded, 'Kelas Aktif', kelas),
+                const Divider(height: 24),
+                _itemProfil(
+                  Icons.badge_rounded,
+                  'NIPD (Nomor Induk Peserta Didik)',
+                  nipd,
+                ),
+                const Divider(height: 24),
+                _itemProfil(
+                  Icons.fingerprint_rounded,
+                  'NISN (Nomor Induk Siswa Nasional)',
+                  nisn,
+                ),
               ],
             ),
           ),
           const SizedBox(height: 28),
-          const Text('BIODATA DIRI LENGKAP', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E40AF), letterSpacing: 0.5)),
+          const Text(
+            'BIODATA DIRI LENGKAP',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              color: Color(0xFF1E40AF),
+              letterSpacing: 0.5,
+            ),
+          ),
           const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFF1F5F9)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.01), blurRadius: 20, offset: const Offset(0, 4))]),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFF1F5F9)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.01),
+                  blurRadius: 20,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _itemProfil(Icons.credit_card_rounded, 'NIK (Nomor Induk Kependudukan)', nik), const Divider(height: 24),
-                if (tempatLahir.trim().isNotEmpty) ...[ _itemProfil(Icons.cake_rounded, 'Tempat, Tanggal Lahir', '$tempatLahir, $tglLahirFormatted'), const Divider(height: 24) ],
-                _itemProfil(Icons.wc_rounded, 'Jenis Kelamin', jk), const Divider(height: 24),
-                _itemProfil(Icons.mosque_rounded, 'Agama', agama), const Divider(height: 24),
-                _itemProfil(Icons.phone_android_rounded, 'Nomor Handphone Aktif', noHp), const Divider(height: 24),
-                _itemProfil(Icons.home_rounded, 'Alamat Domisili / Tempat Tinggal', domisili),
+                _itemProfil(
+                  Icons.credit_card_rounded,
+                  'NIK (Nomor Induk Kependudukan)',
+                  nik,
+                ),
+                const Divider(height: 24),
+                if (tempatLahir.trim().isNotEmpty) ...[
+                  _itemProfil(
+                    Icons.cake_rounded,
+                    'Tempat, Tanggal Lahir',
+                    '$tempatLahir, $tglLahirFormatted',
+                  ),
+                  const Divider(height: 24),
+                ],
+                _itemProfil(Icons.wc_rounded, 'Jenis Kelamin', jk),
+                const Divider(height: 24),
+                _itemProfil(Icons.mosque_rounded, 'Agama', agama),
+                const Divider(height: 24),
+                _itemProfil(
+                  Icons.phone_android_rounded,
+                  'Nomor Handphone Aktif',
+                  noHp,
+                ),
+                const Divider(height: 24),
+                _itemProfil(
+                  Icons.home_rounded,
+                  'Alamat Domisili / Tempat Tinggal',
+                  domisili,
+                ),
               ],
             ),
           ),
@@ -313,8 +1020,32 @@ class DetailProfilSiswaScreen extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: const Color(0xFF64748B)), const SizedBox(width: 16),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500)), const SizedBox(height: 4), Text(value ?? '-', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155)))]))
+        Icon(icon, size: 20, color: const Color(0xFF64748B)),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFF94A3B8),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                (value == null || value.isEmpty) ? '-' : value,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF334155),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
