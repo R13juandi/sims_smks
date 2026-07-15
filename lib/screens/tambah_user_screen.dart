@@ -1,12 +1,61 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import '../services/face_recognition_service.dart';
 
 class TambahUserScreen extends StatefulWidget {
   const TambahUserScreen({super.key});
 
   @override
   State<TambahUserScreen> createState() => _TambahUserScreenState();
+  List<double>? _faceEmbeddingBaru;
+bool _isDaftarWajahLoading = false;
+}
+Future<void> _daftarkanWajah() async {
+  setState(() => _isDaftarWajahLoading = true);
+  final detector = FaceDetector(
+    options: FaceDetectorOptions(performanceMode: FaceDetectorMode.accurate),
+  );
+  try {
+    await FaceRecognitionService.instance.init();
+
+    final picker = ImagePicker();
+    final foto = await picker.pickImage(
+      source: ImageSource.camera,
+      preferredCameraDevice: CameraDevice.front,
+      imageQuality: 60,
+    );
+    if (foto == null) {
+      _showSnackBar('Pendaftaran wajah dibatalkan.', Colors.orange);
+      return;
+    }
+
+    final inputImage = InputImage.fromFilePath(foto.path);
+    final faces = await detector.processImage(inputImage);
+
+    if (faces.isEmpty) throw 'Wajah tidak terdeteksi, ulangi pengambilan foto.';
+    if (faces.length > 1) throw 'Terdeteksi lebih dari satu wajah, pastikan hanya satu orang di kamera.';
+
+    final embedding =
+        await FaceRecognitionService.instance.getEmbedding(File(foto.path), faces.first);
+    if (embedding == null) throw 'Gagal memproses wajah, coba ulangi.';
+
+    setState(() => _faceEmbeddingBaru = embedding);
+    _showSnackBar('Wajah berhasil didaftarkan! Lanjutkan mengisi form.', Colors.green);
+  } catch (e) {
+    _showSnackBar('Gagal mendaftarkan wajah: $e', Colors.red);
+  } finally {
+    detector.close();
+    if (mounted) setState(() => _isDaftarWajahLoading = false);
+  }
+}
+
+void _showSnackBar(String pesan, Color warna) {
+  if (!mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(pesan), backgroundColor: warna));
 }
 
 class _TambahUserScreenState extends State<TambahUserScreen> {
@@ -137,6 +186,11 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
   }
 
   Future<void> _prosesRegistrasiUser() async {
+    if ((_selectedRole == 'siswa' || _selectedRole == 'guru') && _faceEmbeddingBaru == null) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Wajib daftarkan wajah terlebih dahulu untuk siswa/guru!')));
+  return;
+}
     if (!_formKey.currentState!.validate()) return;
     if (_selectedRole == 'siswa' && _selectedKelasSiswa == null) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Silakan pilih kelas siswa!'))); return; }
     if (_selectedRole == 'guru' && (_selectedMapelGuru.isEmpty || _selectedKelasGuru.isEmpty)) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Guru wajib memiliki minimal 1 mapel & 1 kelas!'))); return; }
@@ -149,8 +203,13 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
 
       if (newUserId != null) {
         Map<String, dynamic> profileData = {
-          'id': newUserId, 'full_name': _namaController.text.trim(), 'role': _selectedRole, 'email': _emailController.text.trim(), 'status_aktif': true, 'nomor_hp': _hpController.text.trim(), 'alamat': _alamatController.text.trim(), 'agama': _selectedAgama, 'jenis_kelamin': _selectedJK,
-        };
+  'id': newUserId, 'full_name': _namaController.text.trim(), 'role': _selectedRole,
+  'email': _emailController.text.trim(), 'status_aktif': true,
+  'nomor_hp': _hpController.text.trim(), 'alamat': _alamatController.text.trim(),
+  'agama': _selectedAgama, 'jenis_kelamin': _selectedJK,
+  if (_faceEmbeddingBaru != null)
+    'face_baseline': FaceRecognitionService.instance.encodeEmbedding(_faceEmbeddingBaru!),
+};
 
         if (_selectedRole == 'guru') {
           profileData['mapel'] = _selectedMapelGuru; profileData['kelas_mengajar'] = _selectedKelasGuru; profileData['nik'] = _nikController.text.trim();
@@ -230,6 +289,26 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                       _buildTextField('NISN', _nisnController, TextInputType.number, Icons.fingerprint_rounded), const SizedBox(height: 12),
                       _buildDropdownField('Kelas Aktif', _selectedKelasSiswa ?? 'X TKJ', _daftarKelas, (val) => setState(() => _selectedKelasSiswa = val)),
                     ],
+
+                    const SizedBox(height: 20),
+const Text('PENDAFTARAN WAJAH (UNTUK PRESENSI CNN)',
+    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E40AF))),
+const SizedBox(height: 8),
+OutlinedButton.icon(
+  onPressed: _isDaftarWajahLoading ? null : _daftarkanWajah,
+  icon: _isDaftarWajahLoading
+      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+      : Icon(_faceEmbeddingBaru != null ? Icons.check_circle : Icons.face_retouching_natural,
+          color: _faceEmbeddingBaru != null ? Colors.green : Colors.blue),
+  label: Text(_faceEmbeddingBaru != null ? 'Wajah Terdaftar ✓' : 'Ambil Foto Wajah (Wajib)'),
+  style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+),
+if (_faceEmbeddingBaru == null)
+  const Padding(
+    padding: EdgeInsets.only(top: 6),
+    child: Text('*Wajib untuk siswa/guru agar bisa presensi Smart Scan.',
+        style: TextStyle(color: Colors.red, fontSize: 11)),
+  ),  
 
                     const SizedBox(height: 32),
                     ElevatedButton(

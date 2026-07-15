@@ -35,6 +35,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.5.0
+  image: ^4.2.0   #crop  & resize wajah sebelum masuk CNN
   provider: ^6.1.1 # Untuk state management
   pdf: ^3.12.0 # Untuk membuat file PDF
   printing: ^5.14.3 # Untuk print atau simpan PDF
@@ -77,6 +78,7 @@ flutter:
     - assets/images/logo_banten.jpg
     - assets/images/logo_smk.png
     - assets/images/ttd_stempel.png
+    - assets/models/mobilefacenet.tflite
 
   # To add assets to your application, add an assets section, like this:
   # assets:

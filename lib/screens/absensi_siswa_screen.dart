@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
+import '../services/face_recognition_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'rekap_absensi_siswa_screen.dart';
@@ -51,9 +52,20 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         performanceMode: FaceDetectorMode.accurate,
       ),
     );
+    _initFaceRecognition();
     _loadDataAwal();
     _cekLokasiSekarang();
   }
+
+  Future<void> _initFaceRecognition() async {
+  try {
+    await FaceRecognitionService.instance.init();
+  } catch (e) {
+    debugPrint('Gagal memuat model CNN: $e');
+    // Tidak menghentikan halaman; validasi CNN akan menolak dengan
+    // pesan jelas saat tombol presensi ditekan jika model gagal dimuat.
+  }
+}
 
   @override
   void dispose() {
@@ -607,8 +619,8 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
 
       if (faces.isEmpty)
         throw 'Wajah tidak terdeteksi. Pastikan pencahayaan cukup.';
-      if (faces.length > 1)
-        throw 'Terdeteksi lebih dari satu wajah pada kamera.';
+      if (faces.isEmpty) throw 'Wajah tidak terdeteksi. Pastikan pencahayaan cukup.';
+      if (faces.length > 1) throw 'Terdeteksi lebih dari satu wajah pada kamera.';
 
       final face = faces.first;
       final sudutKepala = face.headEulerAngleY ?? 0;
@@ -616,7 +628,34 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         throw 'Wajah harus lurus menghadap kamera.';
       }
 
-      _showSnackBar('Menganalisis validitas wajah...', Colors.blue);
+      // ================= LAPISAN 2: VERIFIKASI CNN (MobileFaceNet) =================
+      _showSnackBar('Menganalisis wajah dengan CNN...', Colors.blue);
+
+      if (!FaceRecognitionService.instance.isReady) {
+        throw 'Model pengenalan wajah (CNN) belum siap. Tutup dan buka ulang halaman ini.';
+      }
+
+      final rawBaseline = _biodataSiswa['face_baseline'];
+      final baselineEmbedding = FaceRecognitionService.instance.decodeEmbedding(rawBaseline);
+
+      if (baselineEmbedding == null) {
+        throw 'Wajah Anda belum terdaftar di sistem. Silakan hubungi Admin/TU untuk pendaftaran wajah (Face Enrollment) terlebih dahulu.';
+      }
+
+      final embeddingSekarang =
+          await FaceRecognitionService.instance.getEmbedding(File(foto.path), face);
+
+      if (embeddingSekarang == null) {
+        throw 'Gagal memproses citra wajah. Coba ulangi dengan pencahayaan lebih baik.';
+      }
+
+      final similarity =
+          FaceRecognitionService.instance.cosineSimilarity(embeddingSekarang, baselineEmbedding);
+
+      if (similarity < FaceRecognitionService.matchThreshold) {
+        throw 'Wajah tidak cocok dengan data terdaftar (kemiripan ${(similarity * 100).toStringAsFixed(1)}%). Presensi ditolak.';
+      }
+      // ================================================================================
 
       final user = _supabase.auth.currentUser;
       if (user == null)
