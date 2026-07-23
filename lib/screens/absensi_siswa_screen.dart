@@ -38,6 +38,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
     {'nama': 'Kampus Bina Sarana Global', 'lat': -6.179190, 'lng': 106.608069},
     {'nama': 'SMK Islam YIA', 'lat': -6.161616, 'lng': 106.675552},
     {'nama': 'Rumah Rajeg', 'lat': -6.116251, 'lng': 106.506694},
+    {'nama': 'toko', 'lat': -6.153981, 'lng': 106.577925},
   ];
 
   FaceDetector? _faceDetector;
@@ -58,14 +59,14 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
   }
 
   Future<void> _initFaceRecognition() async {
-  try {
-    await FaceRecognitionService.instance.init();
-  } catch (e) {
-    debugPrint('Gagal memuat model CNN: $e');
-    // Tidak menghentikan halaman; validasi CNN akan menolak dengan
-    // pesan jelas saat tombol presensi ditekan jika model gagal dimuat.
+    try {
+      await FaceRecognitionService.instance.init();
+    } catch (e) {
+      debugPrint('Gagal memuat model CNN: $e');
+      // Tidak menghentikan halaman; validasi CNN akan menolak dengan
+      // pesan jelas saat tombol presensi ditekan jika model gagal dimuat.
+    }
   }
-}
 
   @override
   void dispose() {
@@ -619,8 +620,10 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
 
       if (faces.isEmpty)
         throw 'Wajah tidak terdeteksi. Pastikan pencahayaan cukup.';
-      if (faces.isEmpty) throw 'Wajah tidak terdeteksi. Pastikan pencahayaan cukup.';
-      if (faces.length > 1) throw 'Terdeteksi lebih dari satu wajah pada kamera.';
+      if (faces.isEmpty)
+        throw 'Wajah tidak terdeteksi. Pastikan pencahayaan cukup.';
+      if (faces.length > 1)
+        throw 'Terdeteksi lebih dari satu wajah pada kamera.';
 
       final face = faces.first;
       final sudutKepala = face.headEulerAngleY ?? 0;
@@ -636,21 +639,25 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       }
 
       final rawBaseline = _biodataSiswa['face_baseline'];
-      final baselineEmbedding = FaceRecognitionService.instance.decodeEmbedding(rawBaseline);
+      final baselineEmbedding = FaceRecognitionService.instance.decodeEmbedding(
+        rawBaseline,
+      );
 
       if (baselineEmbedding == null) {
         throw 'Wajah Anda belum terdaftar di sistem. Silakan hubungi Admin/TU untuk pendaftaran wajah (Face Enrollment) terlebih dahulu.';
       }
 
-      final embeddingSekarang =
-          await FaceRecognitionService.instance.getEmbedding(File(foto.path), face);
+      final embeddingSekarang = await FaceRecognitionService.instance
+          .getEmbedding(File(foto.path), face);
 
       if (embeddingSekarang == null) {
         throw 'Gagal memproses citra wajah. Coba ulangi dengan pencahayaan lebih baik.';
       }
 
-      final similarity =
-          FaceRecognitionService.instance.cosineSimilarity(embeddingSekarang, baselineEmbedding);
+      final similarity = FaceRecognitionService.instance.cosineSimilarity(
+        embeddingSekarang,
+        baselineEmbedding,
+      );
 
       if (similarity < FaceRecognitionService.matchThreshold) {
         throw 'Wajah tidak cocok dengan data terdaftar (kemiripan ${(similarity * 100).toStringAsFixed(1)}%). Presensi ditolak.';
