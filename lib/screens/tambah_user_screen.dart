@@ -210,8 +210,9 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
   }
 
   Future<void> _prosesRegistrasiUser() async {
-    if ((_selectedRole == 'siswa' || _selectedRole == 'guru') && _faceEmbeddingBaru == null) {
-      _showSnackBar('Wajib daftarkan wajah terlebih dahulu untuk siswa/guru!', Colors.orange);
+    // 🔥 UBAH HANYA UNTUK SISWA SAJA
+    if (_selectedRole == 'siswa' && _faceEmbeddingBaru == null) {
+      _showSnackBar('Wajib daftarkan wajah terlebih dahulu untuk siswa!', Colors.orange);
       return;
     }
     
@@ -329,23 +330,29 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                       _buildDropdownField('Kelas Aktif', _selectedKelasSiswa ?? 'X TKJ', _daftarKelas, (val) => setState(() => _selectedKelasSiswa = val)),
                     ],
 
-                    const SizedBox(height: 20),
-                    const Text('PENDAFTARAN WAJAH (UNTUK PRESENSI CNN)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E40AF))),
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: _isDaftarWajahLoading ? null : _daftarkanWajah,
-                      icon: _isDaftarWajahLoading
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                          : Icon(_faceEmbeddingBaru != null ? Icons.check_circle : Icons.face_retouching_natural,
-                              color: _faceEmbeddingBaru != null ? Colors.green : Colors.blue),
-                      label: Text(_faceEmbeddingBaru != null ? 'Wajah Terdaftar ✓' : 'Ambil Foto Wajah (Wajib)'),
-                      style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
-                    ),
-                    if (_faceEmbeddingBaru == null)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 6),
-                        child: Text('*Wajib untuk siswa/guru agar bisa presensi Smart Scan.', style: TextStyle(color: Colors.red, fontSize: 11)),
-                      ),  
+                    // 🔥 TAMBAHKAN KONDISI IF INI AGAR HANYA MUNCUL PADA ROLE SISWA
+                    if (_selectedRole == 'siswa') ...[
+                      const SizedBox(height: 20),
+                      const Text(
+                        'PENDAFTARAN WAJAH (UNTUK PRESENSI CNN)',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E40AF)),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: _isDaftarWajahLoading ? null : _daftarkanWajah,
+                        icon: _isDaftarWajahLoading
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : Icon(_faceEmbeddingBaru != null ? Icons.check_circle : Icons.face_retouching_natural,
+                                color: _faceEmbeddingBaru != null ? Colors.green : Colors.blue),
+                        label: Text(_faceEmbeddingBaru != null ? 'Wajah Terdaftar ✓' : 'Ambil Foto Wajah (Wajib)'),
+                        style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+                      ),
+                      if (_faceEmbeddingBaru == null)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 6),
+                          child: Text('*Wajib untuk siswa agar bisa presensi Smart Scan.', style: TextStyle(color: Colors.red, fontSize: 11)),
+                        ),
+                    ], // 🔥 TUTUP KURUNG KONDISI IF SISWA
 
                     const SizedBox(height: 32),
                     ElevatedButton(
