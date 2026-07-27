@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 
 class NilaiSiswaScreen extends StatefulWidget {
   const NilaiSiswaScreen({super.key});
@@ -76,7 +77,8 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
 
   Future<void> _simpanNilai() async {
     if (_selectedSiswa == null || _nilaiController.text.isEmpty || _selectedMataPelajaran == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Isi data siswa, mata pelajaran, dan nilai!'), backgroundColor: Colors.orange));
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(context, 'Isi data siswa, mata pelajaran, dan nilai dengan lengkap!', isSuccess: false, judul: 'Form Tidak Lengkap');
       return;
     }
 
@@ -85,19 +87,19 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
       double? parsedValue = double.tryParse(rawValue);
       if (parsedValue == null) throw 'Format angka pada nilai tidak valid.';
 
-      // 🔥 INI KUNCINYA: Menggunakan 'mapel' sesuai screenshot Supabase
       await _supabase.from('nilai').insert({
         'siswa_id': _selectedSiswa,
         'semester': _selectedSemester,
         'kategori': _selectedKategori,
-        'mapel': _selectedMataPelajaran, // <-- Diperbaiki
+        'mapel': _selectedMataPelajaran,
         'nilai': parsedValue,
         'keterangan': _keteranganController.text.trim(),
         'tanggal': DateTime.now().toIso8601String(),
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nilai siswa berhasil disimpan!'), backgroundColor: Colors.green));
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(context, 'Nilai siswa berhasil disimpan ke sistem!', isSuccess: true, judul: 'Berhasil');
 
       _nilaiController.clear();
       _keteranganController.clear();
@@ -105,7 +107,8 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
 
       _fetchData();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan: $e'), backgroundColor: Colors.red));
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(context, 'Gagal menyimpan nilai: $e', isSuccess: false, judul: 'Terjadi Kesalahan');
     }
   }
 
@@ -208,9 +211,29 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
                                       subtitle: Text('Mapel: $mapelTampil\nSem: ${nilai['semester'] ?? '-'} | Kategori: ${nilai['kategori'] ?? '-'}\nNilai: ${nilai['nilai'] ?? '-'}', style: const TextStyle(height: 1.4)),
                                       trailing: IconButton(
                                         icon: const Icon(Icons.delete, color: Colors.red),
-                                        onPressed: () async {
-                                          await _supabase.from('nilai').delete().eq('id', nilai['id']);
-                                          _fetchData();
+                                        onPressed: () {
+                                          // 🔥 KONFIRMASI HAPUS DI TENGAH LAYAR
+                                          showDialog(
+                                            context: context,
+                                            builder: (ctx) => AlertDialog(
+                                              title: const Text("Hapus Nilai"),
+                                              content: const Text("Apakah Anda yakin ingin menghapus data nilai ini?"),
+                                              actions: [
+                                                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Batal")),
+                                                TextButton(
+                                                  onPressed: () async {
+                                                    Navigator.pop(ctx);
+                                                    await _supabase.from('nilai').delete().eq('id', nilai['id']);
+                                                    _fetchData();
+                                                    if (mounted) {
+                                                      PopupService.show(context, 'Data nilai berhasil dihapus.', isSuccess: true);
+                                                    }
+                                                  },
+                                                  child: const Text("Hapus", style: TextStyle(color: Colors.red)),
+                                                ),
+                                              ],
+                                            ),
+                                          );
                                         },
                                       ),
                                     ),

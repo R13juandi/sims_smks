@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 
 class ManajemenJadwalScreen extends StatefulWidget {
   const ManajemenJadwalScreen({super.key});
@@ -49,7 +50,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
       daftarGuru.sort((a, b) => a.compareTo(b));
       if (mounted) setState(() { _guruList = daftarGuru; _dynamicGuruMapel = tempGuruMapel; });
     } catch (e) {
-      _showSnackBar('Gagal memuat daftar guru', Colors.red);
+      if (mounted) PopupService.show(context, 'Gagal memuat daftar guru', isSuccess: false, judul: 'Gagal');
     }
   }
 
@@ -59,7 +60,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
       final data = await _supabase.from('jadwal').select().order('jam_mulai', ascending: true);
       if (mounted) setState(() => _jadwalList = data);
     } catch (e) {
-      _showSnackBar('Gagal memuat jadwal', Colors.red);
+      if (mounted) PopupService.show(context, 'Gagal memuat jadwal', isSuccess: false, judul: 'Gagal');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -73,7 +74,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     String? selectedGuru = isEdit ? jadwal['guru_pengampu'] : null;
     String? selectedMapel = isEdit ? jadwal['mata_pelajaran'] : null;
     
-    // 🔥 DETEKSI APAKAH INI JAM ISTIRAHAT (Termasuk 2x Istirahat)
     bool isIstirahat = isEdit && (selectedMapel?.toLowerCase().contains('istirahat') ?? false) || (selectedMapel?.toLowerCase().contains('ishoma') ?? false);
     String typeIstirahat = isIstirahat ? (selectedMapel ?? 'Istirahat 1') : 'Istirahat 1';
 
@@ -101,7 +101,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 🔥 TOGGLE KHUSUS ISTIRAHAT
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), decoration: BoxDecoration(color: isIstirahat ? Colors.orange.shade50 : Colors.grey.shade100, borderRadius: BorderRadius.circular(8), border: Border.all(color: isIstirahat ? Colors.orange : Colors.grey.shade300)),
                       child: Row(
@@ -132,7 +131,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // 🔥 JIKA ISTIRAHAT, TAMPILKAN 2x ISTIRAHAT & ISHOMA
                     if (isIstirahat)
                       DropdownButtonFormField<String>(
                         value: typeIstirahat, items: ['Istirahat 1', 'Istirahat 2', 'Ishoma'].map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(),
@@ -175,7 +173,9 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900),
                   onPressed: () async {
                     if (selectedHari == null || selectedKelas == null || selectedMapel == null || jamMulai == null || jamSelesai == null) {
-                      _showSnackBar('Harap lengkapi semua Pilihan dan Waktu!', Colors.orange); return;
+                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+                      PopupService.show(context, 'Harap lengkapi semua Pilihan dan Waktu!', isSuccess: false, judul: 'Peringatan'); 
+                      return;
                     }
                     final formatMulai = '${jamMulai!.hour.toString().padLeft(2, '0')}:${jamMulai!.minute.toString().padLeft(2, '0')}:00';
                     final formatSelesai = '${jamSelesai!.hour.toString().padLeft(2, '0')}:${jamSelesai!.minute.toString().padLeft(2, '0')}:00';
@@ -187,8 +187,12 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                       if (isEdit) await _supabase.from('jadwal').update(data).eq('id', jadwal['id']);
                       else await _supabase.from('jadwal').insert(data);
                       
-                      Navigator.pop(context); _fetchJadwal(); _showSnackBar('Jadwal berhasil disimpan!', Colors.green);
-                    } catch (e) { _showSnackBar('Error: $e', Colors.red); }
+                      Navigator.pop(context); _fetchJadwal(); 
+                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+                      if (mounted) PopupService.show(context, 'Jadwal berhasil disimpan!', isSuccess: true);
+                    } catch (e) { 
+                      if (mounted) PopupService.show(context, 'Error: $e', isSuccess: false, judul: 'Gagal'); 
+                    }
                   },
                   child: const Text('Simpan Jadwal', style: TextStyle(color: Colors.white)),
                 ),
@@ -200,12 +204,32 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     );
   }
 
-  void _hapusJadwal(dynamic id) async {
-    try { await _supabase.from('jadwal').delete().eq('id', id); _fetchJadwal(); _showSnackBar('Jadwal berhasil dihapus', Colors.green); } 
-    catch (e) { _showSnackBar('Gagal menghapus: $e', Colors.red); }
+  void _hapusJadwal(dynamic id) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Hapus Jadwal"), content: const Text("Apakah Anda yakin ingin menghapus jadwal ini?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Batal")),
+          TextButton(
+            onPressed: () async { 
+              Navigator.pop(context);
+              try { 
+                await _supabase.from('jadwal').delete().eq('id', id); 
+                _fetchJadwal(); 
+                // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+                if (mounted) PopupService.show(context, 'Jadwal berhasil dihapus', isSuccess: true); 
+              } 
+              catch (e) { 
+                if (mounted) PopupService.show(context, 'Gagal menghapus: $e', isSuccess: false, judul: 'Gagal'); 
+              }
+            }, 
+            child: const Text("Hapus", style: TextStyle(color: Colors.red))
+          ),
+        ],
+      ),
+    );
   }
-
-  void _showSnackBar(String pesan, Color warna) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(pesan), backgroundColor: warna, behavior: SnackBarBehavior.floating)); }
 
   @override
   Widget build(BuildContext context) {
@@ -235,7 +259,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                       final jamMulai = jadwal['jam_mulai'] != null && jadwal['jam_mulai'].toString().length >= 5 ? jadwal['jam_mulai'].toString().substring(0, 5) : '00:00';
                       final jamSelesai = jadwal['jam_selesai'] != null && jadwal['jam_selesai'].toString().length >= 5 ? jadwal['jam_selesai'].toString().substring(0, 5) : '00:00';
                       
-                      // 🔥 DESAIN KHUSUS ISTIRAHAT (1, 2, atau Ishoma)
                       bool isIstirahat = jadwal['mata_pelajaran'].toString().toLowerCase().contains('istirahat') || jadwal['mata_pelajaran'].toString().toLowerCase().contains('ishoma');
 
                       return Container(

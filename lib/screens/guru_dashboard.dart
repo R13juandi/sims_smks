@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 import '../login_screen.dart';
 import 'absensi_screen.dart';
 import 'rekap_absensi_guru_screen.dart';
@@ -110,7 +111,8 @@ class _GuruDashboardState extends State<GuruDashboard> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal memuat data: $e')));
+        // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+        PopupService.show(context, 'Gagal memuat data guru: $e', isSuccess: false, judul: 'Terjadi Kesalahan');
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -139,11 +141,19 @@ class _GuruDashboardState extends State<GuruDashboard> {
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: Colors.red, size: 22),
             tooltip: 'Keluar Aplikasi',
-            onPressed: () async {
-              await _supabase.auth.signOut();
-              if (!mounted) return;
-              Navigator.pushAndRemoveUntil(
-                context, MaterialPageRoute(builder: (context) => const LoginScreen()), (route) => false,
+            onPressed: () {
+              // 🔥 KONFIRMASI LOGOUT DI TENGAH LAYAR
+              PopupService.showConfirm(
+                context,
+                'Apakah Anda yakin ingin keluar dari sistem Pendidik?',
+                judul: 'Konfirmasi Keluar',
+                onConfirm: () async {
+                  await _supabase.auth.signOut();
+                  if (!mounted) return;
+                  Navigator.pushAndRemoveUntil(
+                    context, MaterialPageRoute(builder: (context) => const LoginScreen()), (route) => false,
+                  );
+                },
               );
             },
           ),
@@ -406,9 +416,6 @@ class JadwalMengajarGuruScreen extends StatelessWidget {
   }
 }
 
-// ====================================================================================
-// 🔥 HALAMAN BUKU NILAI GURU (INPUT & REKAP JADI SATU) + VALIDASI KEREN 0-100
-// ====================================================================================
 class InputNilaiGuruScreen extends StatefulWidget {
   final Map<String, dynamic> biodataGuru;
   final List<String> kelasMengajar;
@@ -457,7 +464,8 @@ class _InputNilaiGuruScreenState extends State<InputNilaiGuruScreen> {
 
   Future<void> _panggilSiswaFormNilai() async {
     if (_selectedKelasNilai == null || _selectedMapelNilai == null || _selectedSemesterNilai == null || _selectedKategoriNilai == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mohon lengkapi seluruh filter di atas!'), backgroundColor: Colors.orange));
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(context, 'Mohon lengkapi seluruh pilihan filter di atas!', isSuccess: false, judul: 'Filter Belum Lengkap');
       return;
     }
 
@@ -499,13 +507,13 @@ class _InputNilaiGuruScreenState extends State<InputNilaiGuruScreen> {
 
       setState(() => _showFormNilai = true);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(context, 'Error mengambil data siswa: $e', isSuccess: false, judul: 'Terjadi Kesalahan');
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
-  // 🔥 FUNGSI NOTIFIKASI KEREN JIKA NILAI TIDAK MASUK AKAL (<0 atau >100)
   void _tampilkanPesanErrorNilai(List<String> daftarSiswaError) {
     showDialog(
       context: context,
@@ -581,7 +589,6 @@ class _InputNilaiGuruScreenState extends State<InputNilaiGuruScreen> {
   }
 
   Future<void> _simpanNilaiKeCloud() async {
-    // 🔥 1. VALIDASI PRE-SAVE (Cek angka melebihi 100 atau kurang dari 0)
     List<String> invalidInputs = [];
     
     for (var s in _listSiswaNilai) {
@@ -591,18 +598,16 @@ class _InputNilaiGuruScreenState extends State<InputNilaiGuruScreen> {
       if (nilaiInput.isNotEmpty) {
         double? cekNilai = double.tryParse(nilaiInput.replaceAll(',', '.'));
         if (cekNilai == null || cekNilai < 0 || cekNilai > 100) {
-          invalidInputs.add(s['full_name']); // Catat nama murid yang nilainya salah
+          invalidInputs.add(s['full_name']); 
         }
       }
     }
 
-    // Jika ada yang salah, tampilkan Popup Keren dan Hentikan Save
     if (invalidInputs.isNotEmpty) {
       _tampilkanPesanErrorNilai(invalidInputs);
       return;
     }
 
-    // 2. LANJUT SIMPAN JIKA SEMUA VALID
     setState(() => _isLoading = true);
     try {
       List<Map<String, dynamic>> batchNilaiInsert = [];
@@ -632,7 +637,8 @@ class _InputNilaiGuruScreenState extends State<InputNilaiGuruScreen> {
       }
 
       if (batchNilaiInsert.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tidak ada nilai yang diinputkan.'), backgroundColor: Colors.orange));
+        // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+        PopupService.show(context, 'Tidak ada nilai yang diinputkan untuk disimpan.', isSuccess: false, judul: 'Data Kosong');
         setState(() => _isLoading = false);
         return;
       }
@@ -640,10 +646,12 @@ class _InputNilaiGuruScreenState extends State<InputNilaiGuruScreen> {
       await _supabase.from('nilai').upsert(batchNilaiInsert);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Buku Nilai (Rekap) sukses disimpan & diperbarui!', style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.green));
       setState(() => _showFormNilai = false);
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(context, 'Buku Nilai (Rekap) sukses disimpan & diperbarui di server!', isSuccess: true, judul: 'Berhasil');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(context, 'Gagal menyimpan nilai: $e', isSuccess: false, judul: 'Terjadi Kesalahan');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -863,10 +871,10 @@ class DaftarSiswaGuruScreen extends StatelessWidget {
                     children: siswaList.isEmpty
                         ? [const Padding(padding: EdgeInsets.all(16), child: Text('Tidak ada siswa.'))]
                         : siswaList.map((s) => ListTile(
-                                leading: const CircleAvatar(backgroundColor: Color(0xFFEFF6FF), child: Icon(Icons.person, color: Color(0xFF1E40AF))),
-                                title: Text(s['full_name'] ?? '-'),
-                                subtitle: Text('NISN: ${s['nisn'] ?? '-'}'),
-                              )).toList(),
+                              leading: const CircleAvatar(backgroundColor: Color(0xFFEFF6FF), child: Icon(Icons.person, color: Color(0xFF1E40AF))),
+                              title: Text(s['full_name'] ?? '-'),
+                              subtitle: Text('NISN: ${s['nisn'] ?? '-'}'),
+                            )).toList(),
                   ),
                 );
               },

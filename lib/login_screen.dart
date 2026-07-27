@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'screens/admin_dashboard.dart';
-import 'screens/guru_dashboard.dart';
-import 'screens/siswa_dashboard.dart';
+import 'services/popup_service.dart'; // 🔥 Alamat import disesuaikan
+import 'screens/admin_dashboard.dart'; // 🔥 Alamat import disesuaikan
+import 'screens/guru_dashboard.dart'; // 🔥 Alamat import disesuaikan
+import 'screens/siswa_dashboard.dart'; // 🔥 Alamat import disesuaikan
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -21,11 +22,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Email dan Kata Sandi tidak boleh kosong!'),
-          backgroundColor: Colors.orange,
-        ),
+      PopupService.show(
+        context,
+        'Email dan Kata Sandi tidak boleh kosong!',
+        isSuccess: false,
+        judul: 'Form Tidak Lengkap',
       );
       return;
     }
@@ -57,14 +58,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ? profileRes['role'].toString().toLowerCase().trim()
             : 'siswa';
 
-        // Tampilkan snackbar keberhasilan dan info role yang terdeteksi
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Login Berhasil! (Role Anda: $role)'),
-            backgroundColor: Colors.green,
-          ),
-        );
-
         // 🔥 LOGIKA PEMBAGIAN HALAMAN (KEBAL TYPO)
         Widget nextDashboard;
         if (role.contains('admin') || role.contains('tata') || role.contains('kepsek')) {
@@ -75,25 +68,33 @@ class _LoginScreenState extends State<LoginScreen> {
           nextDashboard = const SiswaDashboard();
         }
 
-        // Paksa pindah halaman secara mutlak
-        Navigator.pushReplacement(
+        PopupService.show(
           context,
-          MaterialPageRoute(builder: (context) => nextDashboard),
+          'Selamat datang! Anda berhasil masuk dengan peran: ${role.toUpperCase()}',
+          isSuccess: true,
+          judul: 'Login Berhasil',
+          onClose: () {
+            // Paksa pindah halaman secara mutlak setelah pop-up ditutup
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => nextDashboard),
+            );
+          },
         );
       }
     } on AuthException catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Gagal login: Periksa kembali email dan sandi Anda.'),
-          backgroundColor: Colors.red,
-        ),
+      PopupService.show(
+        context,
+        'Gagal login: Periksa kembali email dan kata sandi Anda.',
+        isSuccess: false,
+        judul: 'Akses Ditolak',
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error sistem: $e'),
-          backgroundColor: Colors.red,
-        ),
+      PopupService.show(
+        context,
+        'Error sistem: $e',
+        isSuccess: false,
+        judul: 'Terjadi Kesalahan',
       );
     } finally {
       if (mounted) {

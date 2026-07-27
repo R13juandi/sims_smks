@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 
 class RekapAbsensiGuruScreen extends StatefulWidget {
   const RekapAbsensiGuruScreen({super.key});
@@ -32,7 +33,6 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
       _namaGuruLogin = profile['full_name'].toString().trim();
       final tanggalFilter = DateFormat('yyyy-MM-dd').format(_selectedDate);
       
-      // Mengambil absensi yg mapelnya diajar oleh guru ybs ATAU mapelnya 'Pulang Sekolah'
       final res = await _supabase.from('absensi')
           .select('*, profiles!inner(full_name, nisn)')
           .eq('tanggal', tanggalFilter)
@@ -51,9 +51,11 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
       await _supabase.from('absensi').update({'status': statusBaru, 'status_verifikasi': verifikasi}).eq('id', id);
       _fetchGuruDanRekap();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Status absensi berhasil diperbarui!'), backgroundColor: Colors.green));
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(context, 'Status absensi berhasil diperbarui!', isSuccess: true, judul: 'Berhasil');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal memperbarui: $e'), backgroundColor: Colors.red));
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(context, 'Gagal memperbarui: $e', isSuccess: false, judul: 'Gagal');
     }
   }
 
@@ -112,7 +114,7 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
                       final String? fotoUrl = a['foto_url'];
                       final String namaMurid = p['full_name'] ?? 'Nama Tidak Dikenal';
                       final String verifikasi = a['status_verifikasi'] ?? 'Disetujui';
-                      final String jamAbsen = a['waktu_absen'] ?? '-'; // Data Jam 
+                      final String jamAbsen = a['waktu_absen'] ?? '-'; 
                       
                       String statusText = 'Hadir'; Color warnaStatus = Colors.green; String kodeTampil = a['status'] ?? 'H';
                       if (a['status'] == 'I') { statusText = 'Izin / Sakit'; warnaStatus = Colors.orange; } else if (a['status'] == 'A') { statusText = 'Alfa'; warnaStatus = Colors.red; } else if (a['status'] == 'T') { statusText = 'Terlambat'; warnaStatus = Colors.amber.shade700; }

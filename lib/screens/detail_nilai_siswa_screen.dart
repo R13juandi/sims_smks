@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 
 class DetailNilaiSiswaScreen extends StatefulWidget {
   final String siswaId;
@@ -59,7 +60,7 @@ class _DetailNilaiSiswaScreenState extends State<DetailNilaiSiswaScreen> {
 
   void _showNilaiDialog({Map<String, dynamic>? nilaiItem}) {
     final isEdit = nilaiItem != null;
-    String selectedMapel = isEdit ? nilaiItem['mata_pelajaran'] : _listMapel.first;
+    String selectedMapel = isEdit ? (nilaiItem['mata_pelajaran'] ?? _listMapel.first) : _listMapel.first;
     String selectedKategori = isEdit ? (nilaiItem['kategori'] ?? _listKategori.first) : _listKategori.first;
     String selectedSemester = isEdit ? (nilaiItem['semester'] ?? 'Semester 1 (Ganjil)') : 'Semester 1 (Ganjil)';
 
@@ -110,7 +111,11 @@ class _DetailNilaiSiswaScreenState extends State<DetailNilaiSiswaScreen> {
                   onPressed: () async {
                     String rawValue = nilaiController.text.replaceAll(',', '.');
                     final nilaiAngka = double.tryParse(rawValue);
-                    if (nilaiAngka == null) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Isi nilai angka dengan benar!'))); return; }
+                    if (nilaiAngka == null) { 
+                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+                      PopupService.show(context, 'Isi nilai angka dengan benar!', isSuccess: false, judul: 'Peringatan'); 
+                      return; 
+                    }
                     try {
                       if (isEdit) {
                         await _supabase.from('nilai').update({'mata_pelajaran': selectedMapel, 'semester': selectedSemester, 'kategori': selectedKategori, 'nilai': nilaiAngka, 'keterangan': keteranganController.text.trim()}).eq('id', nilaiItem['id']);
@@ -118,10 +123,13 @@ class _DetailNilaiSiswaScreenState extends State<DetailNilaiSiswaScreen> {
                         await _supabase.from('nilai').insert({'siswa_id': widget.siswaId, 'mata_pelajaran': selectedMapel, 'semester': selectedSemester, 'kategori': selectedKategori, 'nilai': nilaiAngka, 'keterangan': keteranganController.text.trim(), 'tanggal': DateTime.now().toIso8601String()});
                       }
                       if (!mounted) return;
-                      Navigator.pop(context); _fetchNilai();
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nilai berhasil disimpan.')));
+                      Navigator.pop(context); 
+                      _fetchNilai();
+                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+                      PopupService.show(context, 'Nilai berhasil disimpan.', isSuccess: true);
                     } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saat menyimpan nilai: $e')));
+                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+                      PopupService.show(context, 'Error saat menyimpan nilai: $e', isSuccess: false, judul: 'Gagal');
                     }
                   },
                   child: const Text("Simpan"),
@@ -141,7 +149,18 @@ class _DetailNilaiSiswaScreenState extends State<DetailNilaiSiswaScreen> {
         title: const Text("Hapus Nilai"), content: const Text("Apakah Anda yakin ingin menghapus data nilai ini?"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Batal")),
-          TextButton(onPressed: () async { await _supabase.from('nilai').delete().eq('id', id); if (mounted) { Navigator.pop(context); _fetchNilai(); } }, child: const Text("Hapus", style: TextStyle(color: Colors.red))),
+          TextButton(
+            onPressed: () async { 
+              await _supabase.from('nilai').delete().eq('id', id); 
+              if (mounted) { 
+                Navigator.pop(context); 
+                _fetchNilai(); 
+                // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+                PopupService.show(context, 'Nilai berhasil dihapus.', isSuccess: true);
+              } 
+            }, 
+            child: const Text("Hapus", style: TextStyle(color: Colors.red))
+          ),
         ],
       ),
     );

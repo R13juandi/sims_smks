@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 import 'tambah_user_screen.dart';
 
 class ManajemenUserScreen extends StatefulWidget {
@@ -17,7 +18,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
   String _searchQuery = '';
 
   TabController? _tabController;
-  bool _isKepsek = false; // 🔥 Variabel Detektif Role
+  bool _isKepsek = false;
 
   @override
   void initState() {
@@ -28,37 +29,30 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
   Future<void> _fetchUsersAndRole() async {
     setState(() => _isLoading = true);
     try {
-      // 1. Cek Role Akun yang sedang Login
       final currentUser = _supabase.auth.currentUser;
       final myProfile = await _supabase.from('profiles').select('role').eq('id', currentUser!.id).single();
       
       bool isKepsekLogin = myProfile['role'] == 'kepsek';
 
-      // 2. Ambil semua data user
       final res = await _supabase.from('profiles').select('*').order('full_name', ascending: true);
       
       if (mounted) {
         setState(() {
           _isKepsek = isKepsekLogin;
-          // 🔥 Jika Kepsek, Tab hanya 2. Jika Admin/TU, Tab ada 3.
           _tabController = TabController(length: _isKepsek ? 2 : 3, vsync: this);
           _users = List<Map<String, dynamic>>.from(res);
           _isLoading = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
-      _showSnackBar('Gagal memuat data: $e', Colors.red);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+        PopupService.show(context, 'Gagal memuat data: $e', isSuccess: false, judul: 'Terjadi Kesalahan');
+      }
     }
   }
 
-  void _showSnackBar(String pesan, Color warna) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(pesan), backgroundColor: warna, behavior: SnackBarBehavior.floating));
-  }
-
-  // ==========================================================
-  // 🔥 TAMPILAN DETAIL DATA PENGGUNA (HANYA BACA / READ-ONLY)
-  // ==========================================================
   void _bukaDialogDetail(Map<String, dynamic> user) {
     bool isSiswa = user['role'] == 'siswa';
     
@@ -134,9 +128,6 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
     );
   }
 
-  // ==========================================================
-  // 🔥 DIALOG EDIT PENUH (HANYA MUNCUL UNTUK ADMIN & TU)
-  // ==========================================================
   void _bukaDialogEdit(Map<String, dynamic> user) {
     bool isSiswa = user['role'] == 'siswa';
 
@@ -291,17 +282,17 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
       if (passwordBaru.isNotEmpty) {
         try {
           await _supabase.rpc('admin_update_password', params: {'uid': userId, 'new_pass': passwordBaru});
-          _showSnackBar('Biodata & Password berhasil diperbarui!', Colors.green);
+          if (mounted) PopupService.show(context, 'Biodata & Password berhasil diperbarui!', isSuccess: true);
         } catch (e) {
-          _showSnackBar('Biodata diperbarui, TAPI gagal ubah password (RPC Error).', Colors.orange);
+          if (mounted) PopupService.show(context, 'Biodata diperbarui, TAPI gagal ubah password (RPC Error).', isSuccess: false, judul: 'Peringatan');
         }
       } else {
-        _showSnackBar('Biodata berhasil diperbarui!', Colors.green);
+        if (mounted) PopupService.show(context, 'Biodata berhasil diperbarui!', isSuccess: true);
       }
-      _fetchUsersAndRole(); // Refresh Data
+      _fetchUsersAndRole();
     } catch (e) {
       setState(() => _isLoading = false);
-      _showSnackBar('Gagal memperbarui: $e', Colors.red);
+      if (mounted) PopupService.show(context, 'Gagal memperbarui: $e', isSuccess: false, judul: 'Terjadi Kesalahan');
     }
   }
 
@@ -319,11 +310,11 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
               setState(() => _isLoading = true);
               try {
                 await _supabase.from('profiles').delete().eq('id', id);
-                _fetchUsersAndRole(); // Refresh Data
-                _showSnackBar('Pengguna berhasil dihapus', Colors.green);
+                _fetchUsersAndRole();
+                if (mounted) PopupService.show(context, 'Pengguna berhasil dihapus', isSuccess: true);
               } catch (e) {
                 setState(() => _isLoading = false);
-                _showSnackBar('Gagal menghapus pengguna.', Colors.red);
+                if (mounted) PopupService.show(context, 'Gagal menghapus pengguna.', isSuccess: false, judul: 'Gagal');
               }
             },
             child: const Text('Ya, Hapus', style: TextStyle(color: Colors.white)),
@@ -347,7 +338,6 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
     final listGuru = filteredList.where((u) => u['role'] == 'guru' || u['role'] == 'kepsek').toList();
     final listStaff = filteredList.where((u) => u['role'] == 'tata_usaha' || u['role'] == 'admin').toList();
 
-    // Pastikan TabController sudah dirender setelah Fetch Data
     if (_tabController == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -362,11 +352,10 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
           tabs: [
             const Tab(text: 'Siswa'), 
             const Tab(text: 'Pendidik'), 
-            if (!_isKepsek) const Tab(text: 'Staff & Admin') // 🔥 Sembunyikan untuk Kepsek
+            if (!_isKepsek) const Tab(text: 'Staff & Admin')
           ],
         ),
       ),
-      // 🔥 Sembunyikan Floating Action Button untuk Kepsek
       floatingActionButton: _isKepsek ? null : FloatingActionButton.extended(
         backgroundColor: Colors.blue.shade900, icon: const Icon(Icons.person_add, color: Colors.white),
         label: const Text('Tambah User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -393,7 +382,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
                   children: [
                     _buildSiswaList(listSiswa), 
                     _buildPegawaiList(listGuru),
-                    if (!_isKepsek) _buildPegawaiList(listStaff), // 🔥 Sembunyikan untuk Kepsek
+                    if (!_isKepsek) _buildPegawaiList(listStaff),
                   ],
                 ),
           ),
@@ -435,7 +424,6 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
                   title: Text(siswa['full_name'] ?? 'Tanpa Nama', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   subtitle: Text('NISN: ${siswa['nisn'] ?? '-'}', style: const TextStyle(fontSize: 12)),
                   onTap: () => _bukaDialogDetail(siswa), 
-                  // 🔥 Sembunyikan ikon Edit & Hapus untuk Kepsek
                   trailing: _isKepsek ? const Icon(Icons.chevron_right, color: Colors.grey) : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -478,7 +466,6 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
               ],
             ),
             onTap: () => _bukaDialogDetail(user),
-            // 🔥 Sembunyikan ikon Edit & Hapus untuk Kepsek
             trailing: _isKepsek ? const Icon(Icons.chevron_right, color: Colors.grey) : Row(
               mainAxisSize: MainAxisSize.min,
               children: [

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import '../services/popup_service.dart'; // Sesuaikan rute file
 import 'package:geolocator/geolocator.dart';
 import '../services/face_recognition_service.dart';
 import 'package:image_picker/image_picker.dart';
@@ -63,8 +64,6 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       await FaceRecognitionService.instance.init();
     } catch (e) {
       debugPrint('Gagal memuat model CNN: $e');
-      // Tidak menghentikan halaman; validasi CNN akan menolak dengan
-      // pesan jelas saat tombol presensi ditekan jika model gagal dimuat.
     }
   }
 
@@ -74,9 +73,6 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
     super.dispose();
   }
 
-  // ==============================================================
-  // HELPER: parsing "HH:mm" atau "HH:mm:ss" ke total menit, aman null
-  // ==============================================================
   int? _jamKeMenit(dynamic jamStr) {
     if (jamStr == null) return null;
     try {
@@ -251,9 +247,11 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       debugPrint('Error _loadDataAwal: $e');
       if (mounted) {
         setState(() => _isLoading = false);
-        _showSnackBar(
+        PopupService.show(
+          context,
           'Gagal memuat data jadwal. Periksa koneksi internet.',
-          Colors.red,
+          isSuccess: false,
+          judul: 'Koneksi Bermasalah',
         );
       }
     }
@@ -356,10 +354,16 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                             source: ImageSource.camera,
                             imageQuality: 50,
                           );
-                          if (foto != null)
+                          if (foto != null) {
                             setStateDialog(() => fileSuratDokter = foto);
+                          }
                         } catch (e) {
-                          _showSnackBar('Gagal mengambil foto: $e', Colors.red);
+                          PopupService.show(
+                            context,
+                            'Gagal mengambil foto: $e',
+                            isSuccess: false,
+                            judul: 'Kamera Error',
+                          );
                         }
                       },
                       child: Container(
@@ -426,16 +430,20 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                   ),
                   onPressed: () {
                     if (alasanController.text.trim().isEmpty) {
-                      _showSnackBar(
+                      PopupService.show(
+                        context,
                         'Keterangan tidak boleh kosong!',
-                        Colors.orange,
+                        isSuccess: false,
+                        judul: 'Peringatan',
                       );
                       return;
                     }
                     if (jenisKeterangan == 'Sakit' && fileSuratDokter == null) {
-                      _showSnackBar(
+                      PopupService.show(
+                        context,
                         'Sakit wajib melampirkan surat dokter!',
-                        Colors.red,
+                        isSuccess: false,
+                        judul: 'Surat Tidak Ada',
                       );
                       return;
                     }
@@ -468,12 +476,18 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
     setState(() => _isProcessingAbsen = true);
     try {
       final user = _supabase.auth.currentUser;
-      if (user == null)
+      if (user == null) {
         throw 'Sesi login tidak ditemukan, silakan login ulang.';
+      }
 
       String? urlSurat;
       if (fotoSakit != null) {
-        _showSnackBar('Mengunggah surat...', Colors.blue);
+        PopupService.show(
+          context,
+          'Sedang mengunggah surat dokter ke sistem...',
+          isSuccess: true,
+          judul: 'Mohon Tunggu',
+        );
         try {
           final ekstensiFile = fotoSakit.path.split('.').last;
           final namaFileUnik =
@@ -485,8 +499,10 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
               .from('foto_absensi')
               .getPublicUrl(namaFileUnik);
         } catch (e) {
+          if (mounted) Navigator.pop(context);
           throw 'Gagal mengunggah surat: $e';
         }
+        if (mounted) Navigator.pop(context);
       }
 
       final tanggalFormat = DateFormat('yyyy-MM-dd').format(DateTime.now());
@@ -511,19 +527,27 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       }, onConflict: 'siswa_id, tanggal, mapel');
 
       if (!mounted) return;
-      _showSuccessDialog(
-        'Pengajuan Berhasil!',
+      PopupService.show(
+        context,
         'Terkirim pada $jamFormat WIB\nMenunggu verifikasi guru.\nStatus: $jenisKeterangan Diajukan',
-        Icons.assignment_turned_in,
-        Colors.orange,
+        isSuccess: true,
+        judul: 'Pengajuan Berhasil!',
       );
     } catch (e) {
-      _showSnackBar('Gagal mengirim pengajuan: $e', Colors.red);
+      PopupService.show(
+        context,
+        'Gagal mengirim pengajuan: $e',
+        isSuccess: false,
+        judul: 'Pengajuan Gagal',
+      );
     } finally {
       if (mounted) setState(() => _isProcessingAbsen = false);
     }
   }
 
+  // =========================================================================
+  // 🔥 ALGORITMA LIVENESS SEJATI: ACTIVE CHALLENGE-RESPONSE + CNN EMBEDDING
+  // =========================================================================
   Future<void> _prosesAbsenLengkap() async {
     if (_tipeAbsen == 'Izin / Sakit') {
       _tampilkanDialogIzin();
@@ -531,9 +555,11 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
     }
 
     if (_tipeAbsen == 'Masuk' && _mapelAktifSaatIni == null) {
-      _showSnackBar(
+      PopupService.show(
+        context,
         'Absen ditolak! Tidak ada pelajaran aktif saat ini.',
-        Colors.orange,
+        isSuccess: false,
+        judul: 'Pelajaran Kosong',
       );
       return;
     }
@@ -541,21 +567,147 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
     if (_tipeAbsen == 'Pulang') {
       final wp = _waktuPulangSekolah;
       if (wp != null && DateTime.now().isBefore(wp)) {
-        _showSnackBar(
+        PopupService.show(
+          context,
           'Absen ditolak! Belum waktunya pulang sekolah.',
-          Colors.red,
+          isSuccess: false,
+          judul: 'Belum Waktunya',
         );
         return;
       }
     }
 
     if (!_isLokasiValid) {
-      _showSnackBar(
+      PopupService.show(
+        context,
         'Absen ditolak! Anda berada di luar area sekolah.',
-        Colors.red,
+        isSuccess: false,
+        judul: 'Di Luar Area',
       );
       return;
     }
+
+    // 1. GENERATE RANDOM LIVENESS CHALLENGE (ANTI-SPOOFING 2D PHOTO)
+    final List<Map<String, dynamic>> challenges = [
+      {
+        'kode': 'SMILE',
+        'instruksi': 'TERSENYUM LEBAR',
+        'desc': 'Tunjukkan senyum terbaik Anda hingga gigi terlihat.',
+        'icon': Icons.sentiment_very_satisfied_rounded,
+      },
+      {
+        'kode': 'BLINK_LEFT',
+        'instruksi': 'KEDIPKAN MATA KIRI',
+        'desc': 'Tutup mata KIRI Anda, dan biarkan mata KANAN tetap terbuka.',
+        'icon': Icons.remove_red_eye_outlined,
+      },
+      {
+        'kode': 'TURN_RIGHT',
+        'instruksi': 'TOLEH SEDIKIT KE KANAN',
+        'desc': 'Putar kepala Anda sedikit ke arah kanan kamera (~20 derajat).',
+        'icon': Icons.turn_right_rounded,
+      },
+    ];
+
+    challenges.shuffle();
+    final selectedChallenge = challenges.first;
+
+    // Tampilkan instruksi Challenge kepada Siswa sebelum kamera terbuka
+    final bool? siapChallenge = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(
+              selectedChallenge['icon'] as IconData,
+              color: Colors.blue.shade900,
+              size: 28,
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Liveness Challenge',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber.shade300),
+              ),
+              child: Column(
+                children: [
+                  const Text(
+                    'INSTRUKSI ANTI-SPOOFING:',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.amber,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Ambil foto wajah sambil\n${selectedChallenge['instruksi']}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.blue.shade900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              selectedChallenge['desc'] as String,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '*Sistem akan menolak foto statis/cetak 2D yang tidak mematuhi instruksi.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.red,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1E40AF),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Buka Kamera Sekarang',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (siapChallenge != true) return;
 
     if (!mounted) return;
     setState(() => _isProcessingAbsen = true);
@@ -603,38 +755,63 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         catatanWaktu = 'Absen Kepulangan';
       }
 
-      // --- Ambil foto & deteksi wajah ---
+      // --- AMBIL FOTO KAMERA DEPAN ---
       final picker = ImagePicker();
       final foto = await picker.pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.front,
-        imageQuality: 30,
+        imageQuality: 40,
       );
       if (foto == null) throw 'Pengambilan foto dibatalkan.';
 
-      if (_faceDetector == null)
+      if (_faceDetector == null) {
         throw 'Modul deteksi wajah belum siap. Coba lagi.';
+      }
 
       final inputImage = InputImage.fromFilePath(foto.path);
       final List<Face> faces = await _faceDetector!.processImage(inputImage);
 
-      if (faces.isEmpty)
-        throw 'Wajah tidak terdeteksi. Pastikan pencahayaan cukup.';
-      if (faces.isEmpty)
-        throw 'Wajah tidak terdeteksi. Pastikan pencahayaan cukup.';
-      if (faces.length > 1)
-        throw 'Terdeteksi lebih dari satu wajah pada kamera.';
-
-      final face = faces.first;
-      final sudutKepala = face.headEulerAngleY ?? 0;
-      if (sudutKepala > 12 || sudutKepala < -12) {
-        throw 'Wajah harus lurus menghadap kamera.';
+      if (faces.isEmpty) {
+        throw 'Wajah tidak terdeteksi. Pastikan pencahayaan cukup dan wajah terlihat jelas.';
+      }
+      if (faces.length > 1) {
+        throw 'Terdeteksi lebih dari satu wajah pada kamera. Pastikan hanya Anda di frame.';
       }
 
-      // ================= LAPISAN 2: VERIFIKASI CNN (MobileFaceNet) =================
-      _showSnackBar('Menganalisis wajah dengan CNN...', Colors.blue);
+      final face = faces.first;
 
+      // 2. 🔥 VALIDASI MATEMATIS ACTIVE LIVENESS (PROBABILITY CHECK)
+      PopupService.show(
+        context,
+        'Menganalisis respons Liveness & Biometrik Wajah...',
+        isSuccess: true,
+        judul: 'Verifikasi AI',
+      );
+
+      if (selectedChallenge['kode'] == 'SMILE') {
+        final smileProb = face.smilingProbability ?? 0.0;
+        if (smileProb < 0.65) {
+          if (mounted) Navigator.pop(context);
+          throw 'Liveness Ditolak: Anda terdeteksi TIDAK TERSENYUM (Probabilitas senyum hanya ${(smileProb * 100).toStringAsFixed(0)}%). Presensi gagal untuk mencegah spoofing!';
+        }
+      } else if (selectedChallenge['kode'] == 'BLINK_LEFT') {
+        final leftEye = face.leftEyeOpenProbability ?? 1.0;
+        final rightEye = face.rightEyeOpenProbability ?? 0.0;
+        if (leftEye > 0.35 || rightEye < 0.55) {
+          if (mounted) Navigator.pop(context);
+          throw 'Liveness Ditolak: Instruksi kedip mata kiri tidak terpenuhi. Pastikan mata kiri tertutup dan kanan terbuka saat foto diambil!';
+        }
+      } else if (selectedChallenge['kode'] == 'TURN_RIGHT') {
+        final rotasiY = face.headEulerAngleY ?? 0.0;
+        if (rotasiY > -10.0) {
+          if (mounted) Navigator.pop(context);
+          throw 'Liveness Ditolak: Posisi kepala kurang menoleh ke kanan (Sudut rotasi $rotasiY°). Ikuti instruksi untuk mencegah foto statis!';
+        }
+      }
+
+      // 3. 🔥 VERIFIKASI IDENTITAS CNN (MobileFaceNet - Cosine Similarity)
       if (!FaceRecognitionService.instance.isReady) {
+        if (mounted) Navigator.pop(context);
         throw 'Model pengenalan wajah (CNN) belum siap. Tutup dan buka ulang halaman ini.';
       }
 
@@ -644,13 +821,15 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       );
 
       if (baselineEmbedding == null) {
-        throw 'Wajah Anda belum terdaftar di sistem. Silakan hubungi Admin/TU untuk pendaftaran wajah (Face Enrollment) terlebih dahulu.';
+        if (mounted) Navigator.pop(context);
+        throw 'Wajah Anda belum terdaftar di sistem. Silakan hubungi Admin/TU untuk pendaftaran wajah terlebih dahulu.';
       }
 
       final embeddingSekarang = await FaceRecognitionService.instance
           .getEmbedding(File(foto.path), face);
 
       if (embeddingSekarang == null) {
+        if (mounted) Navigator.pop(context);
         throw 'Gagal memproses citra wajah. Coba ulangi dengan pencahayaan lebih baik.';
       }
 
@@ -660,13 +839,17 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       );
 
       if (similarity < FaceRecognitionService.matchThreshold) {
-        throw 'Wajah tidak cocok dengan data terdaftar (kemiripan ${(similarity * 100).toStringAsFixed(1)}%). Presensi ditolak.';
+        if (mounted) Navigator.pop(context);
+        throw 'Identitas Wajah Tidak Cocok dengan data terdaftar (Kemiripan ${(similarity * 100).toStringAsFixed(1)}%). Presensi ditolak!';
       }
-      // ================================================================================
 
+      if (mounted) Navigator.pop(context); // Tutup dialog proses jika sukses lolos 2 tahap
+
+      // 4. UNGGAH BUKTI & SIMPAN KE DATABASE
       final user = _supabase.auth.currentUser;
-      if (user == null)
+      if (user == null) {
         throw 'Sesi login tidak ditemukan, silakan login ulang.';
+      }
 
       String linkFotoPublik;
       try {
@@ -693,7 +876,8 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         'kelas': _biodataSiswa['kelas'] ?? '-',
         'status': statusAbsenDb,
         'status_verifikasi': 'Pending',
-        'keterangan': '$_tipeAbsen ($catatanWaktu)',
+        'keterangan':
+            '$_tipeAbsen ($catatanWaktu - Liveness ${selectedChallenge['kode']} Lolos)',
         'guru_pengampu': guruSimpan,
         'lat': posisiSekarang.latitude,
         'lng': posisiSekarang.longitude,
@@ -701,88 +885,22 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       }, onConflict: 'siswa_id, tanggal, mapel');
 
       if (!mounted) return;
-      _showSuccessDialog(
-        'Absensi Berhasil!',
-        'Terkirim pada $jamFormat WIB\nMenunggu verifikasi guru.\nStatus: Absen $_tipeAbsen $mapelSimpan',
-        Icons.check_circle,
-        Colors.green,
+      PopupService.show(
+        context,
+        'Terkirim pada $jamFormat WIB\nMenunggu verifikasi guru.\nStatus: Absen $_tipeAbsen $mapelSimpan\n(Liveness & Biometrik Valid 100%)',
+        isSuccess: true,
+        judul: 'Absensi Berhasil!',
       );
     } catch (e) {
-      _showSnackBar(e.toString(), Colors.red);
+      PopupService.show(
+        context,
+        e.toString(),
+        isSuccess: false,
+        judul: 'Presensi Ditolak',
+      );
     } finally {
       if (mounted) setState(() => _isProcessingAbsen = false);
     }
-  }
-
-  void _showSnackBar(String pesan, Color warna) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(pesan),
-        backgroundColor: warna,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  void _showSuccessDialog(
-    String judul,
-    String pesan,
-    IconData iconTampil,
-    Color warnaIcon,
-  ) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Icon(iconTampil, color: warnaIcon, size: 60),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              judul,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              pesan,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey.shade700,
-                fontSize: 13,
-                height: 1.4,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1E40AF),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              onPressed: () {
-                Navigator.pop(context);
-                if (mounted) Navigator.pop(context);
-              },
-              child: const Text(
-                'KEMBALI KE BERANDA',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -883,9 +1001,11 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),
                                     onPressed: () {
-                                      _showSnackBar(
-                                        'Mencari GPS...',
-                                        Colors.blue,
+                                      PopupService.show(
+                                        context,
+                                        'Sedang memperbarui koordinat GPS Anda...',
+                                        isSuccess: true,
+                                        judul: 'Mencari Lokasi',
                                       );
                                       _cekLokasiSekarang();
                                     },
@@ -1073,7 +1193,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                                 Text(
                                   mapelAktif != null
                                       ? (mapelAktif['mata_pelajaran'] ?? '-')
-                                            .toString()
+                                          .toString()
                                       : 'Belum Ada Pelajaran Dimulai',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 import '../login_screen.dart';
 import 'absensi_siswa_screen.dart';
 import 'nilai_rapor_screen.dart';
@@ -42,7 +44,6 @@ class _SiswaDashboardState extends State<SiswaDashboard>
     return hari[now.weekday - 1];
   }
 
-  // Normalisasi string kelas supaya pencocokan "X TKJ" vs "10 TKJ" tetap match
   bool _kelasCocok(String kelasJadwal, String kelasSiswa) {
     final kj = kelasJadwal.toLowerCase().trim();
     final ks = kelasSiswa.toLowerCase().trim();
@@ -109,22 +110,9 @@ class _SiswaDashboardState extends State<SiswaDashboard>
           _isLoading = false;
           _errorMessage = 'Gagal memuat data. Periksa koneksi internet Anda.';
         });
+        // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+        PopupService.show(context, 'Gagal memuat data dashboard: $e', isSuccess: false, judul: 'Koneksi Bermasalah');
       }
-    }
-  }
-
-  Future<void> _logout() async {
-    try {
-      await _supabase.auth.signOut();
-    } catch (e) {
-      debugPrint('Error logout: $e');
-    } finally {
-      if (!mounted) return;
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-        (route) => false,
-      );
     }
   }
 
@@ -205,7 +193,23 @@ class _SiswaDashboardState extends State<SiswaDashboard>
                 size: 20,
               ),
               tooltip: 'Keluar Aplikasi',
-              onPressed: _logout,
+              onPressed: () {
+                // 🔥 KONFIRMASI LOGOUT DI TENGAH LAYAR
+                PopupService.showConfirm(
+                  context,
+                  'Apakah Anda yakin ingin keluar dari akun Siswa ini?',
+                  judul: 'Konfirmasi Keluar',
+                  onConfirm: () async {
+                    await _supabase.auth.signOut();
+                    if (!mounted) return;
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  },
+                );
+              },
             ),
           ),
         ],
@@ -331,7 +335,8 @@ class _SiswaDashboardState extends State<SiswaDashboard>
                   onTap: () {
                     final uid = _supabase.auth.currentUser?.id;
                     if (uid == null) {
-                      _showSnackBar('Sesi login tidak ditemukan.', Colors.red);
+                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+                      PopupService.show(context, 'Sesi login tidak ditemukan.', isSuccess: false, judul: 'Akses Gagal');
                       return;
                     }
                     Navigator.push(
@@ -349,7 +354,8 @@ class _SiswaDashboardState extends State<SiswaDashboard>
                   onTap: () {
                     final uid = _supabase.auth.currentUser?.id;
                     if (uid == null) {
-                      _showSnackBar('Sesi login tidak ditemukan.', Colors.red);
+                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+                      PopupService.show(context, 'Sesi login tidak ditemukan.', isSuccess: false, judul: 'Akses Gagal');
                       return;
                     }
                     Navigator.push(
@@ -552,18 +558,10 @@ class _SiswaDashboardState extends State<SiswaDashboard>
                       );
                     },
                   ),
-            const SizedBox(height: 20),
           ],
         ),
       ),
     );
-  }
-
-  void _showSnackBar(String pesan, Color warna) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(pesan), backgroundColor: warna));
   }
 
   Widget _buildMenuCard({

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 
 class DetailUserScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -70,40 +71,50 @@ class _DetailUserScreenState extends State<DetailUserScreen> {
 
       await _supabase.from('profiles').update(updatePayload).eq('id', widget.userData['id']);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Perubahan data berhasil disimpan!'), backgroundColor: Colors.green));
-      Navigator.pop(context, true);
+      
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(context, 'Perubahan data berhasil disimpan!', isSuccess: true, onClose: () => Navigator.pop(context, true));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal memperbarui data: $e'), backgroundColor: Colors.red));
+      if (mounted) {
+        PopupService.show(context, 'Gagal memperbarui data: $e', isSuccess: false, judul: 'Terjadi Kesalahan');
+      }
     } finally {
-      setState(() => _isSaving = false);
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   Future<void> _hapusUser() async {
-    final konfirmasi = await showDialog<bool>(
+    showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Konfirmasi Hapus', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         content: Text('Apakah Anda yakin ingin menghapus data ${widget.userData['full_name']} secara permanen?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Hapus', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              setState(() => _isSaving = true);
+              try {
+                await _supabase.from('profiles').delete().eq('id', widget.userData['id']);
+                if (!mounted) return;
+                
+                // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+                PopupService.show(context, 'Pengguna berhasil dihapus permanen.', isSuccess: true, onClose: () => Navigator.pop(context, true));
+              } catch (e) {
+                if (mounted) {
+                  PopupService.show(context, 'Gagal menghapus akun: $e', isSuccess: false, judul: 'Gagal');
+                }
+              } finally {
+                if (mounted) setState(() => _isSaving = false);
+              }
+            },
+            child: const Text('Hapus Permanen', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );
-
-    if (konfirmasi == true) {
-      setState(() => _isSaving = true);
-      try {
-        await _supabase.from('profiles').delete().eq('id', widget.userData['id']);
-        if (!mounted) return;
-        Navigator.pop(context, true);
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menghapus akun: $e'), backgroundColor: Colors.red));
-      } finally {
-        setState(() => _isSaving = false);
-      }
-    }
   }
 
   @override

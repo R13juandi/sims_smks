@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 
 class NilaiRaporScreen extends StatefulWidget {
   final String siswaId;
@@ -53,7 +55,6 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
           pivot[mapel] = {'Ulangan Harian': 0.0, 'Praktek': 0.0, 'PTS': 0.0, 'PAS': 0.0};
         }
 
-        // 🔥 TUGAS & HARIAN OTOMATIS MASUK KE KOLOM "ULANGAN HARIAN"
         if (kategori.contains('tugas') || kategori.contains('harian')) {
           if (pivot[mapel]!['Ulangan Harian'] == 0.0) {
             pivot[mapel]!['Ulangan Harian'] = nilai;
@@ -72,7 +73,6 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
         double pts = e.value['PTS']!; 
         double pas = e.value['PAS']!;
         
-        // Rumus Nilai Akhir
         double akhir = (ulanganHarian + praktek + pts + pas) / 4; 
         
         String predikat;
@@ -100,7 +100,8 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gagal mengambil data rapor.'), backgroundColor: Colors.red));
+        // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+        PopupService.show(context, 'Gagal mengambil data rapor: $e', isSuccess: false, judul: 'Gagal Memuat');
       }
     }
   }
@@ -171,7 +172,6 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
                   headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900), 
                   cellHeight: 28, cellStyle: const pw.TextStyle(fontSize: 9),
                   cellAlignments: { 0: pw.Alignment.center, 1: pw.Alignment.centerLeft, 2: pw.Alignment.center, 3: pw.Alignment.center, 4: pw.Alignment.center, 5: pw.Alignment.center, 6: pw.Alignment.center },
-                  // 🔥 NAMA KOLOM DIUBAH MENJADI "Ulangan Harian"
                   headers: ['No', 'Mata Pelajaran', 'KKM', 'Ulangan Harian', 'Praktek', 'PTS/PAS', 'Nilai Akhir', 'Huruf'],
                   data: List<List<dynamic>>.generate(_dataRaporPivoted.length, (index) {
                     final n = _dataRaporPivoted[index];
@@ -221,7 +221,8 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
       );
       await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save(), name: 'E-Rapor_${_namaSiswa}_$_selectedSemester');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(context, 'Error saat mencetak PDF: $e', isSuccess: false, judul: 'Gagal Mencetak');
     }
   }
 
@@ -270,7 +271,6 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
                         headingRowColor: MaterialStateProperty.resolveWith((states) => Colors.blue.shade900), columnSpacing: 25,
                         columns: const [
                           DataColumn(label: Text('Mata Pelajaran', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                          // 🔥 NAMA KOLOM DI APLIKASI JUGA DIGANTI MENJADI "Ulangan Harian"
                           DataColumn(label: Text('Ulangan Harian', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
                           DataColumn(label: Text('Praktek', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
                           DataColumn(label: Text('PTS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),

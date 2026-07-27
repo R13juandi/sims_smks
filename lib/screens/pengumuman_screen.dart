@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 
 class PengumumanScreen extends StatefulWidget {
   const PengumumanScreen({super.key});
@@ -30,7 +31,6 @@ class _PengumumanScreenState extends State<PengumumanScreen> {
     super.dispose();
   }
 
-  // Mengambil daftar pengumuman dari Supabase
   Future<void> _fetchPengumuman() async {
     setState(() => _isLoading = true);
     try {
@@ -49,15 +49,14 @@ class _PengumumanScreenState extends State<PengumumanScreen> {
     }
   }
 
-  // Membuat pengumuman baru ke Supabase
   Future<void> _buatPengumuman() async {
-    if (_judulController.text.trim().isEmpty ||
-        _isiController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Judul dan isi pengumuman tidak boleh kosong!'),
-          backgroundColor: Colors.orange,
-        ),
+    if (_judulController.text.trim().isEmpty || _isiController.text.trim().isEmpty) {
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(
+        context,
+        'Judul dan isi pengumuman tidak boleh kosong!',
+        isSuccess: false,
+        judul: 'Form Tidak Lengkap',
       );
       return;
     }
@@ -79,27 +78,30 @@ class _PengumumanScreenState extends State<PengumumanScreen> {
       if (!mounted) return;
       Navigator.pop(context); // Tutup bottom sheet form
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pengumuman berhasil diterbitkan!'),
-          backgroundColor: Colors.green,
-        ),
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(
+        context,
+        'Pengumuman berhasil diterbitkan!',
+        isSuccess: true,
+        judul: 'Berhasil',
       );
 
       _fetchPengumuman(); // Refresh daftar pengumuman
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal menerbitkan pengumuman: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+        PopupService.show(
+          context,
+          'Gagal menerbitkan pengumuman: $e',
+          isSuccess: false,
+          judul: 'Terjadi Kesalahan',
+        );
+      }
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
-  // Menampilkan Form Input Pengumuman (Bottom Sheet)
   void _showFormPengumuman() {
     showModalBottomSheet(
       context: context,

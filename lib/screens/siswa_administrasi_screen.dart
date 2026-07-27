@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 
 class SiswaAdministrasiScreen extends StatefulWidget {
   final String siswaId;
@@ -20,7 +21,7 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
   Map<String, dynamic> _biodata = {};
   List<Map<String, dynamic>> _riwayatBayar = [];
   
-  // 🔥 KELUHAN SISWA REAL-LIFE: TAGIHAN BIAYA
+  // Katalog Tagihan
   final List<Map<String, dynamic>> _daftarTagihanWajib = [
     {'jenis': 'LKS', 'nominal': 300000},
     {'jenis': 'Kegiatan PKL', 'nominal': 400000},
@@ -57,7 +58,6 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
   void _bukaDialogUploadBukti(String jenisTagihan, int nominalAsli) {
     String kelasSiswa = (_biodata['kelas'] ?? '').toString().toLowerCase();
     
-    // 🔥 PERBAIKAN LOGIKA CERDAS: Mencegah kelas XI dan XII ikut jadi gratis
     bool isKelas10 = RegExp(r'\b(10|x)\b').hasMatch(kelasSiswa);
     bool isSPP = jenisTagihan == 'SPP Bulanan';
     
@@ -67,7 +67,13 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
     }
 
     if (nominalFinal == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Hore! Tagihan ini GRATIS untuk kelas Anda.'), backgroundColor: Colors.green));
+      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+      PopupService.show(
+        context, 
+        'Hore! Tagihan $jenisTagihan ini GRATIS untuk kelas Anda.', 
+        isSuccess: true, 
+        judul: 'Tagihan Gratis'
+      );
       return;
     }
 
@@ -92,7 +98,6 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
                   children: [
                     const Text('Nominal Transfer (Rp)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red)),
                     const SizedBox(height: 4),
-                    // KUNCI NOMINAL AGAR SISWA TIDAK BISA NGEDIT (MENCEGAH KURANG BAYAR)
                     TextField(
                       controller: nominalCtrl, 
                       readOnly: true, 
@@ -105,7 +110,6 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
                     ),
                     const SizedBox(height: 12),
                     
-                    // KOLOM BULAN HANYA MUNCUL JIKA YANG DIBAYAR ADALAH SPP
                     if (isSPP) ...[
                       const Text('Pembayaran Bulan', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 4),
@@ -137,11 +141,23 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900),
                   onPressed: () async {
                     if (fileBukti == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Harap upload bukti transfer!'), backgroundColor: Colors.red));
+                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+                      PopupService.show(
+                        context, 
+                        'Harap upload foto bukti transfer atau struk pembayaran Anda terlebih dahulu!', 
+                        isSuccess: false, 
+                        judul: 'Bukti Kosong'
+                      );
                       return;
                     }
                     if (isSPP && keteranganCtrl.text.trim().isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bulan SPP wajib diisi!'), backgroundColor: Colors.red));
+                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+                      PopupService.show(
+                        context, 
+                        'Bulan pembayaran SPP wajib diisi agar tidak terjadi kesalahan pencatatan!', 
+                        isSuccess: false, 
+                        judul: 'Form Belum Lengkap'
+                      );
                       return;
                     }
                     
@@ -180,9 +196,25 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
       });
 
       _fetchDataKeuangan();
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bukti berhasil dikirim. Menunggu verifikasi TU.'), backgroundColor: Colors.green));
+      if(mounted) {
+        // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+        PopupService.show(
+          context, 
+          'Bukti pembayaran berhasil dikirim ke sistem. Silakan tunggu verifikasi dari pihak Tata Usaha.', 
+          isSuccess: true, 
+          judul: 'Terkirim!'
+        );
+      }
     } catch (e) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      if(mounted) {
+        // 🔥 DIUBAH KE POPUP TENGAH LAYAR
+        PopupService.show(
+          context, 
+          'Gagal mengirim pembayaran: $e', 
+          isSuccess: false, 
+          judul: 'Terjadi Kesalahan'
+        );
+      }
     } finally {
       setState(() => _isUploading = false);
     }

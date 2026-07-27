@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import '../services/face_recognition_service.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 
 class TambahUserScreen extends StatefulWidget {
   const TambahUserScreen({super.key});
@@ -19,7 +20,7 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
 
   bool _isLoading = false;
   
-  // 🔥 VARIABEL WAJAH SUDAH DIMASUKKAN KE DALAM STATE
+  // Variabel Wajah
   List<double>? _faceEmbeddingBaru;
   bool _isDaftarWajahLoading = false;
 
@@ -74,9 +75,11 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
     super.dispose();
   }
 
+  // 🔥 FUNGSI NOTIFIKASI DIUBAH MENJADI POP-UP TENGAH LAYAR
   void _showSnackBar(String pesan, Color warna) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(pesan), backgroundColor: warna));
+    final bool isSuccess = (warna == Colors.green);
+    PopupService.show(context, pesan, isSuccess: isSuccess);
   }
 
   Future<void> _fetchMataPelajaran() async {
@@ -102,7 +105,6 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
     });
   }
 
-  // 🔥 FUNGSI DAFTAR WAJAH SUDAH DIMASUKKAN KE DALAM STATE
   Future<void> _daftarkanWajah() async {
     setState(() => _isDaftarWajahLoading = true);
     
@@ -210,7 +212,7 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
   }
 
   Future<void> _prosesRegistrasiUser() async {
-    // 🔥 UBAH HANYA UNTUK SISWA SAJA
+    // 🔥 WAJIB WAJAH HANYA UNTUK SISWA
     if (_selectedRole == 'siswa' && _faceEmbeddingBaru == null) {
       _showSnackBar('Wajib daftarkan wajah terlebih dahulu untuk siswa!', Colors.orange);
       return;
@@ -265,8 +267,15 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
 
         await _supabase.from('profiles').insert(profileData);
         if (!mounted) return;
-        _showSnackBar('Akun ${_selectedRole.toUpperCase()} sukses diterbitkan!', Colors.green);
-        Navigator.pop(context, true);
+        
+        // 🔥 MENGGUNAKAN POP-UP TENGAH LAYAR SAAT BERHASIL
+        PopupService.show(
+          context, 
+          'Akun ${_selectedRole.toUpperCase()} sukses diterbitkan ke sistem!', 
+          isSuccess: true,
+          judul: 'Registrasi Berhasil',
+          onClose: () => Navigator.pop(context, true), // Kembali ke menu sebelumnya setelah tekan OK
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -330,7 +339,7 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                       _buildDropdownField('Kelas Aktif', _selectedKelasSiswa ?? 'X TKJ', _daftarKelas, (val) => setState(() => _selectedKelasSiswa = val)),
                     ],
 
-                    // 🔥 TAMBAHKAN KONDISI IF INI AGAR HANYA MUNCUL PADA ROLE SISWA
+                    // 🔥 TOMBOL WAJAH HANYA MUNCUL KETIKA ROLE SISWA DIPILIH
                     if (_selectedRole == 'siswa') ...[
                       const SizedBox(height: 20),
                       const Text(
@@ -352,7 +361,7 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                           padding: EdgeInsets.only(top: 6),
                           child: Text('*Wajib untuk siswa agar bisa presensi Smart Scan.', style: TextStyle(color: Colors.red, fontSize: 11)),
                         ),
-                    ], // 🔥 TUTUP KURUNG KONDISI IF SISWA
+                    ],
 
                     const SizedBox(height: 32),
                     ElevatedButton(

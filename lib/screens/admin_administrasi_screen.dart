@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 
 class AdminAdministrasiScreen extends StatefulWidget {
   const AdminAdministrasiScreen({super.key});
@@ -113,11 +114,16 @@ class _AdminAdministrasiScreenState extends State<AdminAdministrasiScreen>
     }
   }
 
+  // 🔥 FUNGSI DIUBAH KE POPUP TENGAH LAYAR
   void _showSnackBar(String pesan, Color warna) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
+    final bool isSuccess = (warna == Colors.green || warna == Colors.blue);
+    PopupService.show(
       context,
-    ).showSnackBar(SnackBar(content: Text(pesan), backgroundColor: warna));
+      pesan,
+      isSuccess: isSuccess,
+      judul: isSuccess ? 'Berhasil' : 'Pemberitahuan',
+    );
   }
 
   @override
@@ -245,9 +251,9 @@ class _AdminAdministrasiScreenState extends State<AdminAdministrasiScreen>
                                           child: ListTile(
                                             contentPadding:
                                                 const EdgeInsets.symmetric(
-                                                  horizontal: 20,
-                                                  vertical: 4,
-                                                ),
+                                              horizontal: 20,
+                                              vertical: 4,
+                                            ),
                                             leading: const CircleAvatar(
                                               backgroundColor: Color(
                                                 0xFFE6FFFA,
@@ -289,8 +295,8 @@ class _AdminAdministrasiScreenState extends State<AdminAdministrasiScreen>
                                                   MaterialPageRoute(
                                                     builder: (context) =>
                                                         DetailKasirScreen(
-                                                          siswaData: siswa,
-                                                        ),
+                                                      siswaData: siswa,
+                                                    ),
                                                   ),
                                                 ).then((_) => _fetchDataAwal());
                                               },
@@ -440,22 +446,22 @@ class _AdminAdministrasiScreenState extends State<AdminAdministrasiScreen>
                                             errorBuilder:
                                                 (context, error, stackTrace) =>
                                                     const Center(
-                                                      child: Icon(
-                                                        Icons.broken_image,
-                                                        color: Colors.grey,
-                                                      ),
-                                                    ),
+                                              child: Icon(
+                                                Icons.broken_image,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
                                             loadingBuilder:
                                                 (context, child, progress) {
-                                                  if (progress == null)
-                                                    return child;
-                                                  return const Center(
-                                                    child:
-                                                        CircularProgressIndicator(
-                                                          strokeWidth: 2,
-                                                        ),
-                                                  );
-                                                },
+                                              if (progress == null)
+                                                return child;
+                                              return const Center(
+                                                child:
+                                                    CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                ),
+                                              );
+                                            },
                                           ),
                                         ),
                                       ),
@@ -470,7 +476,7 @@ class _AdminAdministrasiScreenState extends State<AdminAdministrasiScreen>
                                             onPressed: idBayar == null
                                                 ? null
                                                 : () =>
-                                                      _verifikasiTolak(idBayar),
+                                                    _verifikasiTolak(idBayar),
                                             child: const Text('TOLAK'),
                                           ),
                                         ),
@@ -483,8 +489,8 @@ class _AdminAdministrasiScreenState extends State<AdminAdministrasiScreen>
                                             onPressed: idBayar == null
                                                 ? null
                                                 : () => _verifikasiTerima(
-                                                    idBayar,
-                                                  ),
+                                                      idBayar,
+                                                    ),
                                             child: const Text(
                                               'TERIMA (LUNAS)',
                                               style: TextStyle(
@@ -595,11 +601,16 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
     }
   }
 
+  // 🔥 FUNGSI DIUBAH KE POPUP TENGAH LAYAR
   void _showSnackBar(String pesan, Color warna) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
+    final bool isSuccess = (warna == Colors.green || warna == Colors.blue);
+    PopupService.show(
       context,
-    ).showSnackBar(SnackBar(content: Text(pesan), backgroundColor: warna));
+      pesan,
+      isSuccess: isSuccess,
+      judul: isSuccess ? 'Berhasil' : 'Pemberitahuan',
+    );
   }
 
   // ==============================================================
@@ -1138,17 +1149,17 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
                                                 Container(
                                                   padding:
                                                       const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                        vertical: 4,
-                                                      ),
+                                                    horizontal: 8,
+                                                    vertical: 4,
+                                                  ),
                                                   decoration: BoxDecoration(
                                                     color: isLunas
                                                         ? Colors.green.shade50
                                                         : Colors.orange.shade50,
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                          6,
-                                                        ),
+                                                      6,
+                                                    ),
                                                   ),
                                                   child: Text(
                                                     statusTampil,
