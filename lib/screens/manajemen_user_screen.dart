@@ -1,6 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import '../services/face_recognition_service.dart';
 import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 import 'tambah_user_screen.dart';
 
@@ -19,6 +23,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
 
   TabController? _tabController;
   bool _isKepsek = false;
+  bool _isUpdatingFace = false;
 
   @override
   void initState() {
@@ -47,15 +52,61 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        // 🔥 DIUBAH KE POPUP TENGAH LAYAR
         PopupService.show(context, 'Gagal memuat data: $e', isSuccess: false, judul: 'Terjadi Kesalahan');
       }
     }
   }
 
+  // =========================================================================
+  // 🔥 REKAYASA SISTEM: PENDAFTARAN WAJAH MENYUSUL (DEFERRED ENROLLMENT)
+  // =========================================================================
+  Future<void> _updateWajahSiswaMenyusul(String userId, String namaSiswa) async {
+    setState(() => _isUpdatingFace = true);
+    final detector = FaceDetector(options: FaceDetectorOptions(performanceMode: FaceDetectorMode.accurate));
+    
+    try {
+      await FaceRecognitionService.instance.init();
+      final picker = ImagePicker();
+      final foto = await picker.pickImage(source: ImageSource.camera, preferredCameraDevice: CameraDevice.front, imageQuality: 60);
+      
+      if (foto == null) {
+        if (mounted) PopupService.show(context, 'Pengambilan foto dibatalkan.', isSuccess: false, judul: 'Batal');
+        return;
+      }
+
+      final inputImage = InputImage.fromFilePath(foto.path);
+      final faces = await detector.processImage(inputImage);
+
+      if (faces.isEmpty) throw 'Wajah tidak terdeteksi, ulangi pengambilan foto.';
+      if (faces.length > 1) throw 'Terdeteksi lebih dari 1 wajah. Pastikan hanya $namaSiswa di depan kamera.';
+
+      final embedding = await FaceRecognitionService.instance.getEmbedding(File(foto.path), faces.first);
+      if (embedding == null) throw 'Gagal mengekstraksi vektor wajah, coba ulangi.';
+
+      final encodedString = FaceRecognitionService.instance.encodeEmbedding(embedding);
+      
+      await _supabase.from('profiles').update({'face_baseline': encodedString}).eq('id', userId);
+      
+      if (!mounted) return;
+      Navigator.pop(context); // Tutup dialog edit
+      _fetchUsersAndRole(); // Refresh tabel data
+      
+      PopupService.show(
+        context, 
+        'Biometrik wajah untuk $namaSiswa sukses didaftarkan dan diaktifkan!', 
+        isSuccess: true, 
+        judul: 'Biometrik Aktif'
+      );
+    } catch (e) {
+      if (mounted) PopupService.show(context, 'Gagal mendaftarkan wajah: $e', isSuccess: false, judul: 'Gagal');
+    } finally {
+      detector.close();
+      if (mounted) setState(() => _isUpdatingFace = false);
+    }
+  }
+
   void _bukaDialogDetail(Map<String, dynamic> user) {
     bool isSiswa = user['role'] == 'siswa';
-    
     String tglLahir = user['tanggal_lahir'] ?? '-';
     if (tglLahir != '-') {
       try { tglLahir = DateFormat('dd MMMM yyyy').format(DateTime.parse(tglLahir)); } catch (_) {}
@@ -86,6 +137,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
                   _buildInfoRow('Kelas Aktif', user['kelas']),
                   _buildInfoRow('NISN', user['nisn']),
                   _buildInfoRow('NIPD', user['nipd']),
+                  _buildInfoRow('Status Biometrik', user['face_baseline'] != null ? 'TERDAFTAR (SIAP ABSEN)' : 'KOSONG / BELUM TERDAFTAR'),
                 ] else ...[
                   _buildInfoRow('NIP', user['nip']),
                   _buildInfoRow('Mata Pelajaran', (user['mapel'] as List<dynamic>?)?.join(', ') ?? user['mata_pelajaran']),
@@ -154,7 +206,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
     String? selectedKelasSiswa = user['kelas'];
 
     final List<String> listRole = ['siswa', 'guru', 'tata_usaha', 'admin', 'kepsek'];
-    final List<String> listAgama = ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Konghucu'];
+    final List<String> listAgama = ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Khonghucu'];
     final List<String> listJK = ['Laki-laki', 'Perempuan'];
     final List<String> listKelasTersedia = ['X TKJ', 'XI TKJ', 'XII TKJ']; 
 
@@ -178,6 +230,75 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
                         decoration: const InputDecoration(labelText: 'Reset Password (Kosongkan jika tidak diganti)', border: OutlineInputBorder(), hintText: 'Masukkan sandi baru...'),
                       ),
                       const SizedBox(height: 16),
+
+                      // 🔥 INDIKATOR & TOMBOL UPDATE BIOMETRIK WAJAH KHUSUS SISWA
+                      if (isSiswa) ...[
+                        _buildHeaderSection('Biometrik Wajah (CNN Baseline)'),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: user['face_baseline'] != null ? Colors.green.shade50 : Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: user['face_baseline'] != null ? Colors.green : Colors.orange),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    user['face_baseline'] != null ? Icons.check_circle : Icons.warning_amber_rounded,
+                                    color: user['face_baseline'] != null ? Colors.green : Colors.orange,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      user['face_baseline'] != null 
+                                          ? 'Biometrik Wajah Aktif' 
+                                          : 'Wajah Belum Terdaftar!',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: user['face_baseline'] != null ? Colors.green.shade800 : Colors.orange.shade800,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                user['face_baseline'] != null 
+                                    ? 'Siswa sudah dapat melakukan presensi Smart Scan.' 
+                                    : 'Siswa ditolak akses absen hingga wajahnya didaftarkan.',
+                                style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF1E40AF),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  onPressed: _isUpdatingFace 
+                                      ? null 
+                                      : () => _updateWajahSiswaMenyusul(user['id'], user['full_name'] ?? 'Siswa'),
+                                  icon: _isUpdatingFace 
+                                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                      : const Icon(Icons.camera_alt_rounded, size: 16),
+                                  label: Text(
+                                    user['face_baseline'] != null ? 'Perbarui Foto Wajah' : 'Daftarkan Wajah Sekarang',
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
 
                       _buildHeaderSection('Data Pribadi'),
                       _buildTextField('Nama Lengkap', nameCtrl),

@@ -75,7 +75,6 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
     super.dispose();
   }
 
-  // 🔥 FUNGSI NOTIFIKASI DIUBAH MENJADI POP-UP TENGAH LAYAR
   void _showSnackBar(String pesan, Color warna) {
     if (!mounted) return;
     final bool isSuccess = (warna == Colors.green);
@@ -211,11 +210,13 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
     );
   }
 
+  // =========================================================================
+  // 🔥 REKAYASA SISTEM: WAJAH DIJADIKAN OPSIONAL (DEFERRED ENROLLMENT)
+  // =========================================================================
   Future<void> _prosesRegistrasiUser() async {
-    // 🔥 WAJIB WAJAH HANYA UNTUK SISWA
+    // Validasi wajah dibebaskan agar tidak memblokir input massal oleh TU
     if (_selectedRole == 'siswa' && _faceEmbeddingBaru == null) {
-      _showSnackBar('Wajib daftarkan wajah terlebih dahulu untuk siswa!', Colors.orange);
-      return;
+      debugPrint('INFO: Akun siswa dibuat TANPA biometrik wajah (Deferred Enrollment).');
     }
     
     if (!_formKey.currentState!.validate()) return;
@@ -233,7 +234,10 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final AuthResponse authRes = await _supabase.auth.signUp(email: _emailController.text.trim(), password: _passwordController.text.trim());
+      final AuthResponse authRes = await _supabase.auth.signUp(
+        email: _emailController.text.trim(), 
+        password: _passwordController.text.trim()
+      );
       final String? newUserId = authRes.user?.id;
 
       if (newUserId != null) {
@@ -247,8 +251,10 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
           'alamat': _alamatController.text.trim(),
           'agama': _selectedAgama, 
           'jenis_kelamin': _selectedJK,
-          if (_faceEmbeddingBaru != null)
-            'face_baseline': FaceRecognitionService.instance.encodeEmbedding(_faceEmbeddingBaru!),
+          // Jika wajah kosong, simpan null ke database
+          'face_baseline': _faceEmbeddingBaru != null 
+              ? FaceRecognitionService.instance.encodeEmbedding(_faceEmbeddingBaru!) 
+              : null,
         };
 
         if (_selectedRole == 'guru') {
@@ -259,22 +265,24 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
 
         if (_selectedRole == 'siswa') {
           profileData.addAll({
-            'kelas': _selectedKelasSiswa, 'tempat_lahir': _tempatLahirController.text.trim(),
+            'kelas': _selectedKelasSiswa, 
+            'tempat_lahir': _tempatLahirController.text.trim(),
             'tanggal_lahir': _selectedTanggalLahir != null ? DateFormat('yyyy-MM-dd').format(_selectedTanggalLahir!) : null,
-            'nik': _nikController.text.trim(), 'nipd': _nipdController.text.trim(), 'nisn': _nisnController.text.trim(),
+            'nik': _nikController.text.trim(), 
+            'nipd': _nipdController.text.trim(), 
+            'nisn': _nisnController.text.trim(),
           });
         }
 
         await _supabase.from('profiles').insert(profileData);
         if (!mounted) return;
         
-        // 🔥 MENGGUNAKAN POP-UP TENGAH LAYAR SAAT BERHASIL
         PopupService.show(
           context, 
-          'Akun ${_selectedRole.toUpperCase()} sukses diterbitkan ke sistem!', 
+          'Akun ${_selectedRole.toUpperCase()} sukses diterbitkan ke sistem!\n${_selectedRole == "siswa" && _faceEmbeddingBaru == null ? "(Status Biometrik: Belum Terdaftar)" : "(Status Biometrik: Aktif)"}', 
           isSuccess: true,
           judul: 'Registrasi Berhasil',
-          onClose: () => Navigator.pop(context, true), // Kembali ke menu sebelumnya setelah tekan OK
+          onClose: () => Navigator.pop(context, true),
         );
       }
     } catch (e) {
@@ -353,14 +361,17 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                             : Icon(_faceEmbeddingBaru != null ? Icons.check_circle : Icons.face_retouching_natural,
                                 color: _faceEmbeddingBaru != null ? Colors.green : Colors.blue),
-                        label: Text(_faceEmbeddingBaru != null ? 'Wajah Terdaftar ✓' : 'Ambil Foto Wajah (Wajib)'),
+                        // 🔥 LABEL DIUBAH MENJADI OPSIONAL
+                        label: Text(_faceEmbeddingBaru != null ? 'Wajah Terdaftar ✓' : 'Ambil Foto Wajah (Opsional)'),
                         style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
                       ),
-                      if (_faceEmbeddingBaru == null)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 6),
-                          child: Text('*Wajib untuk siswa agar bisa presensi Smart Scan.', style: TextStyle(color: Colors.red, fontSize: 11)),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text(
+                          '*Opsional: Boleh dilewatkan saat input massal awal semester. Siswa dapat didaftarkan wajahnya menyusul melalui menu Edit Pengguna di Manajemen User.',
+                          style: TextStyle(color: Colors.blueGrey, fontSize: 11, fontStyle: FontStyle.italic),
                         ),
+                      ),
                     ],
 
                     const SizedBox(height: 32),
