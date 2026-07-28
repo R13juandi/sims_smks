@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
-import '../services/popup_service.dart'; // Sesuaikan rute file
+import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
 import '../login_screen.dart';
 import 'rekap_nilai_admin_screen.dart';
 import 'tambah_user_screen.dart';
@@ -764,10 +764,13 @@ class _AdminDashboardState extends State<AdminDashboard>
         const SizedBox(height: 20),
         ElevatedButton.icon(
           onPressed: () {
+            // 🔥 MENGIRIM ROLE KE KELAS REKAP AGAR KEPSEK READ-ONLY
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => const RekapAbsensiAdminScreen(),
+                builder: (context) => RekapAbsensiAdminScreen(
+                  userRole: _currentUserRole,
+                ),
               ),
             );
           },
@@ -836,8 +839,12 @@ class _AdminDashboardState extends State<AdminDashboard>
   }
 }
 
+// =========================================================================
+// 🔥 REKAP AKUMULASI BULANAN DENGAN VISIBILITAS LOKASI & SO D KEPSEK
+// =========================================================================
 class RekapAbsensiAdminScreen extends StatefulWidget {
-  const RekapAbsensiAdminScreen({super.key});
+  final String userRole;
+  const RekapAbsensiAdminScreen({super.key, this.userRole = 'admin'});
   @override
   State<RekapAbsensiAdminScreen> createState() =>
       _RekapAbsensiAdminScreenState();
@@ -873,9 +880,6 @@ class _RekapAbsensiAdminScreenState extends State<RekapAbsensiAdminScreen> {
     _fetchRekapBulanan();
   }
 
-  // =========================================================================
-  // 🔥 AGREGASI SERVER-SIDE (RPC POSTGRESQL) - BEBAS RAM BOCOR / OOM
-  // =========================================================================
   Future<void> _fetchRekapBulanan() async {
     setState(() => _isLoading = true);
     try {
@@ -924,6 +928,50 @@ class _RekapAbsensiAdminScreenState extends State<RekapAbsensiAdminScreen> {
         );
       }
     }
+  }
+
+  // 🔥 FUNGSI UPDATE STATUS ABSEN OLEH ADMIN / TU PADA LOG BULANAN
+  Future<void> _updateStatusAbsenAdmin(dynamic idAbsen, String statusBaru, String verifikasi) async {
+    try {
+      await _supabase.from('absensi').update({
+        'status': statusBaru,
+        'status_verifikasi': verifikasi,
+      }).eq('id', idAbsen);
+      
+      PopupService.show(context, 'Status berhasil diubah menjadi $verifikasi ($statusBaru)!', isSuccess: true);
+      _fetchRekapBulanan(); // Refresh angka rekap
+      if (mounted) Navigator.pop(context); // Tutup dialog setelah sukses
+    } catch (e) {
+      PopupService.show(context, 'Gagal mengupdate: $e', isSuccess: false);
+    }
+  }
+
+  void _tampilkanDetailFoto(BuildContext context, String url, String namaSiswa) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppBar(
+              title: Text('Bukti Presensi: $namaSiswa', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black)),
+              backgroundColor: Colors.white, elevation: 0, automaticallyImplyLeading: false,
+              actions: [IconButton(icon: const Icon(Icons.close, color: Colors.black), onPressed: () => Navigator.pop(context))],
+            ),
+            InteractiveViewer(
+              panEnabled: true, minScale: 0.5, maxScale: 4.0,
+              child: Image.network(url, fit: BoxFit.contain, loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return const SizedBox(height: 250, child: Center(child: CircularProgressIndicator()));
+              }, errorBuilder: (context, error, stackTrace) => const SizedBox(height: 200, child: Center(child: Icon(Icons.broken_image, size: 50, color: Colors.red)))),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -1181,6 +1229,7 @@ class _RekapAbsensiAdminScreenState extends State<RekapAbsensiAdminScreen> {
     );
   }
 
+  // 🔥 UPGRADE LOG BULANAN: TAMPILAN LOKASI GPS & MAKER-CHECKER OVERRIDE
   void _lihatDetailLogSiswa(
     BuildContext context,
     String idSiswa,
@@ -1258,37 +1307,85 @@ class _RekapAbsensiAdminScreenState extends State<RekapAbsensiAdminScreen> {
                       itemCount: logs.length,
                       itemBuilder: (context, index) {
                         final log = logs[index];
-                        final foto = log['foto_url'];
+                        final String? foto = log['foto_url'];
+                        final String verifikasi = log['status_verifikasi'] ?? 'Pending';
+                        final String jamAbsen = log['waktu_absen'] ?? '-';
+                        final String keterangan = log['keterangan'] ?? '-';
+                        final double? lat = log['lat'] as double?;
+                        final double? lng = log['lng'] as double?;
+
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(color: Colors.grey.shade300),
+                            side: BorderSide(color: verifikasi == 'Pending' ? Colors.orange : Colors.grey.shade300, width: verifikasi == 'Pending' ? 1.5 : 1.0),
                           ),
-                          child: ListTile(
-                            leading: foto != null
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(
-                                      foto,
-                                      width: 50,
-                                      height: 50,
-                                      fit: BoxFit.cover,
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    if (foto != null && foto.isNotEmpty)
+                                      GestureDetector(
+                                        onTap: () => _tampilkanDetailFoto(context, foto, nama),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: Image.network(foto, width: 45, height: 45, fit: BoxFit.cover),
+                                        ),
+                                      )
+                                    else
+                                      Container(width: 45, height: 45, decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.location_on, color: Colors.blue)),
+                                    
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(log['tanggal'].toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                              Text('Status: ${log['status']}', style: TextStyle(fontWeight: FontWeight.bold, color: log['status'] == 'A' ? Colors.red : Colors.green)),
+                                            ],
+                                          ),
+                                          Text('⏰ Scan: $jamAbsen WIB | Mapel: ${log['mapel'] ?? "-"}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                        ],
+                                      ),
                                     ),
-                                  )
-                                : const Icon(
-                                    Icons.location_on,
-                                    color: Colors.red,
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(6)),
+                                  child: Text('📍 Keterangan: $keterangan\n📌 Verifikasi: $verifikasi ${lat != null ? "(GPS: $lat, $lng)" : ""}', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.black87, height: 1.3)),
+                                ),
+                                
+                                // 🔥 TOMBOL VERIFIKASI OVERRIDE (HANYA UNTUK TU & ADMIN, KEPSEK READ-ONLY)
+                                if (!widget.userRole.contains('kepsek') && verifikasi == 'Pending') ...[
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      OutlinedButton(
+                                        style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: const BorderSide(color: Colors.red), padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0)),
+                                        onPressed: () => _updateStatusAbsenAdmin(log['id'], 'A', 'Ditolak'),
+                                        child: const Text('Tolak (Alfa)', style: TextStyle(fontSize: 11)),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0)),
+                                        onPressed: () => _updateStatusAbsenAdmin(log['id'], log['status'], 'Disetujui'),
+                                        child: const Text('ACC SAH (Override)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                      ),
+                                    ],
                                   ),
-                            title: Text(
-                              log['tanggal'].toString(),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            subtitle: Text(
-                              'Scan Masuk: ${log['waktu_absen'] ?? '-'}\nStatus: ${log['status']}',
+                                ]
+                              ],
                             ),
                           ),
                         );
