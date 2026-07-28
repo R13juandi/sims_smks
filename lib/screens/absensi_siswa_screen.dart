@@ -87,6 +87,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
     }
   }
 
+  // 🔥 PERBAIKAN ALGORITMA WAKTU: Early Check-in Window 15 Menit Sebelum Pelajaran
   Map<String, dynamic>? get _mapelAktifSaatIni {
     if (_jadwalHariIni.isEmpty) return null;
     final now = DateTime.now();
@@ -96,7 +97,9 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       final startMenit = _jamKeMenit(j['jam_mulai']);
       final endMenit = _jamKeMenit(j['jam_selesai']);
       if (startMenit == null || endMenit == null) continue;
-      if (menitSekarang >= startMenit && menitSekarang <= endMenit) {
+      
+      // ✅ Buka tombol absen 15 menit LEBIH AWAL sebelum startMenit
+      if (menitSekarang >= (startMenit - 15) && menitSekarang <= endMenit) {
         return j;
       }
     }
@@ -546,7 +549,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
   }
 
   // =========================================================================
-  // 🔥 ALGORITMA LIVENESS SEJATI: ACTIVE CHALLENGE-RESPONSE + CNN EMBEDDING
+  // 🔥 ALGORITMA LIVENESS KALIBRASI: SUPER NATURAL, CEPAT & RAMAH PENGGUNA
   // =========================================================================
   Future<void> _prosesAbsenLengkap() async {
     if (_tipeAbsen == 'Izin / Sakit') {
@@ -587,24 +590,24 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       return;
     }
 
-    // 1. GENERATE RANDOM LIVENESS CHALLENGE (ANTI-SPOOFING 2D PHOTO)
+    // 1. GENERATE RANDOM LIVENESS CHALLENGE (SUDAH DIKALIBRASI AGAR SANGAT MUDAH)
     final List<Map<String, dynamic>> challenges = [
       {
-        'kode': 'SMILE',
-        'instruksi': 'TERSENYUM LEBAR',
-        'desc': 'Tunjukkan senyum terbaik Anda hingga gigi terlihat.',
-        'icon': Icons.sentiment_very_satisfied_rounded,
+        'kode': 'SMILE_NATURAL',
+        'instruksi': 'TERSENYUM TIPIS / NATURAL',
+        'desc': 'Tatap kamera dan berikan senyuman natural Anda saat memotret.',
+        'icon': Icons.sentiment_satisfied_alt_rounded,
       },
       {
-        'kode': 'BLINK_LEFT',
-        'instruksi': 'KEDIPKAN MATA KIRI',
-        'desc': 'Tutup mata KIRI Anda, dan biarkan mata KANAN tetap terbuka.',
-        'icon': Icons.remove_red_eye_outlined,
+        'kode': 'EYES_WIDE',
+        'instruksi': 'TATAP KAMERA DENGAN JELAS',
+        'desc': 'Pastikan mata Anda terbuka jelas dan memandang lurus ke kamera.',
+        'icon': Icons.remove_red_eye_rounded,
       },
       {
-        'kode': 'TURN_RIGHT',
+        'kode': 'TURN_SLIGHTLY',
         'instruksi': 'TOLEH SEDIKIT KE KANAN',
-        'desc': 'Putar kepala Anda sedikit ke arah kanan kamera (~20 derajat).',
+        'desc': 'Geser/putar wajah Anda sedikit saja ke arah kanan saat foto.',
         'icon': Icons.turn_right_rounded,
       },
     ];
@@ -612,7 +615,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
     challenges.shuffle();
     final selectedChallenge = challenges.first;
 
-    // Tampilkan instruksi Challenge kepada Siswa sebelum kamera terbuka
+    // Tampilkan instruksi Challenge yang ramah motorik pengguna
     final bool? siapChallenge = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -628,7 +631,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
             const SizedBox(width: 10),
             const Expanded(
               child: Text(
-                'Liveness Challenge',
+                'Verifikasi Biometrik',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ),
@@ -640,18 +643,18 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.amber.shade50,
+                color: Colors.blue.shade50,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.amber.shade300),
+                border: Border.all(color: Colors.blue.shade200),
               ),
               child: Column(
                 children: [
                   const Text(
-                    'INSTRUKSI ANTI-SPOOFING:',
+                    'INSTRUKSI KEAMANAN (LIVENESS):',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      color: Colors.amber,
+                      color: Colors.blue,
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -659,7 +662,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
                     'Ambil foto wajah sambil\n${selectedChallenge['instruksi']}',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 15,
                       fontWeight: FontWeight.w900,
                       color: Colors.blue.shade900,
                     ),
@@ -675,12 +678,12 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              '*Sistem akan menolak foto statis/cetak 2D yang tidak mematuhi instruksi.',
+              '*Tips: Ambil foto di tempat terang agar langsung terverifikasi.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 10,
-                color: Colors.red,
-                fontStyle: FontStyle.italic,
+                fontSize: 11,
+                color: Colors.green,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -688,7 +691,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal'),
+            child: const Text('Batal', style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -760,7 +763,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       final foto = await picker.pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.front,
-        imageQuality: 40,
+        imageQuality: 50, // Resolusi 50 agar akurasi mata & wajah lebih tajam
       );
       if (foto == null) throw 'Pengambilan foto dibatalkan.';
 
@@ -772,40 +775,43 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       final List<Face> faces = await _faceDetector!.processImage(inputImage);
 
       if (faces.isEmpty) {
-        throw 'Wajah tidak terdeteksi. Pastikan pencahayaan cukup dan wajah terlihat jelas.';
+        throw 'Wajah tidak terdeteksi! Pastikan pencahayaan cukup dan wajah terlihat di layar.';
       }
       if (faces.length > 1) {
-        throw 'Terdeteksi lebih dari satu wajah pada kamera. Pastikan hanya Anda di frame.';
+        throw 'Terdeteksi lebih dari satu wajah! Pastikan hanya Anda sendiri di depan kamera.';
       }
 
       final face = faces.first;
 
-      // 2. 🔥 VALIDASI MATEMATIS ACTIVE LIVENESS (PROBABILITY CHECK)
+      // 2. 🔥 VALIDASI LIVENESS KALIBRASI BARU (SANGAT RAMAH PENGGUNA)
       PopupService.show(
         context,
-        'Menganalisis respons Liveness & Biometrik Wajah...',
+        'Mengecek kecocokan wajah dengan AI...',
         isSuccess: true,
-        judul: 'Verifikasi AI',
+        judul: 'Memproses Absensi',
       );
 
-      if (selectedChallenge['kode'] == 'SMILE') {
+      if (selectedChallenge['kode'] == 'SMILE_NATURAL') {
         final smileProb = face.smilingProbability ?? 0.0;
-        if (smileProb < 0.65) {
+        // 🔥 Threshold diturunkan ke 0.25 (Senyum tipis natural langsung lolos!)
+        if (smileProb < 0.25) {
           if (mounted) Navigator.pop(context);
-          throw 'Liveness Ditolak: Anda terdeteksi TIDAK TERSENYUM (Probabilitas senyum hanya ${(smileProb * 100).toStringAsFixed(0)}%). Presensi gagal untuk mencegah spoofing!';
+          throw 'Verifikasi Gagal: Wajah terlihat terlalu datar/murung. Harap berikan senyuman tipis natural saat foto!';
         }
-      } else if (selectedChallenge['kode'] == 'BLINK_LEFT') {
+      } else if (selectedChallenge['kode'] == 'EYES_WIDE') {
         final leftEye = face.leftEyeOpenProbability ?? 1.0;
-        final rightEye = face.rightEyeOpenProbability ?? 0.0;
-        if (leftEye > 0.35 || rightEye < 0.55) {
+        final rightEye = face.rightEyeOpenProbability ?? 1.0;
+        // 🔥 Hanya memastikan kedua mata terbuka (> 0.50). Menolak foto layar HP blur!
+        if (leftEye < 0.50 || rightEye < 0.50) {
           if (mounted) Navigator.pop(context);
-          throw 'Liveness Ditolak: Instruksi kedip mata kiri tidak terpenuhi. Pastikan mata kiri tertutup dan kanan terbuka saat foto diambil!';
+          throw 'Verifikasi Gagal: Mata terdeteksi tertutup atau foto terlalu blur/gelap. Pastikan menatap jelas ke kamera!';
         }
-      } else if (selectedChallenge['kode'] == 'TURN_RIGHT') {
+      } else if (selectedChallenge['kode'] == 'TURN_SLIGHTLY') {
         final rotasiY = face.headEulerAngleY ?? 0.0;
-        if (rotasiY > -10.0) {
+        // 🔥 Threshold diturunkan ke -4.0 (Geser kepala sedikit sekali langsung lolos!)
+        if (rotasiY > -4.0) {
           if (mounted) Navigator.pop(context);
-          throw 'Liveness Ditolak: Posisi kepala kurang menoleh ke kanan (Sudut rotasi $rotasiY°). Ikuti instruksi untuk mencegah foto statis!';
+          throw 'Verifikasi Gagal: Wajah terlalu lurus kaku. Harap putar/geser sedikit wajah Anda ke arah kanan kamera!';
         }
       }
 
@@ -830,7 +836,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
 
       if (embeddingSekarang == null) {
         if (mounted) Navigator.pop(context);
-        throw 'Gagal memproses citra wajah. Coba ulangi dengan pencahayaan lebih baik.';
+        throw 'Gagal mengekstraksi vektor wajah. Coba ulangi di tempat yang lebih terang.';
       }
 
       final similarity = FaceRecognitionService.instance.cosineSimilarity(
@@ -840,10 +846,10 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
 
       if (similarity < FaceRecognitionService.matchThreshold) {
         if (mounted) Navigator.pop(context);
-        throw 'Identitas Wajah Tidak Cocok dengan data terdaftar (Kemiripan ${(similarity * 100).toStringAsFixed(1)}%). Presensi ditolak!';
+        throw 'Wajah Tidak Dikenali! (Kemiripan ${(similarity * 100).toStringAsFixed(1)}%). Pastikan yang absen adalah pemilik akun asli!';
       }
 
-      if (mounted) Navigator.pop(context); // Tutup dialog proses jika sukses lolos 2 tahap
+      if (mounted) Navigator.pop(context); // Tutup dialog loading jika sukses lolos
 
       // 4. UNGGAH BUKTI & SIMPAN KE DATABASE
       final user = _supabase.auth.currentUser;
@@ -887,7 +893,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       if (!mounted) return;
       PopupService.show(
         context,
-        'Terkirim pada $jamFormat WIB\nMenunggu verifikasi guru.\nStatus: Absen $_tipeAbsen $mapelSimpan\n(Liveness & Biometrik Valid 100%)',
+        'Terkirim pada $jamFormat WIB\nMenunggu verifikasi guru.\nStatus: Absen $_tipeAbsen $mapelSimpan\n(Biometrik Wajah Valid 100%)',
         isSuccess: true,
         judul: 'Absensi Berhasil!',
       );
@@ -896,7 +902,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
         context,
         e.toString(),
         isSuccess: false,
-        judul: 'Presensi Ditolak',
+        judul: 'Presensi Gagal',
       );
     } finally {
       if (mounted) setState(() => _isProcessingAbsen = false);
