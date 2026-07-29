@@ -16,12 +16,12 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
   bool _isLoading = true;
 
   String? _selectedSiswa;
-  String _selectedSemester = 'Semester 1 (Ganjil)'; // 🔥 Diperbaiki
-  String _selectedKategori = 'Tugas';
+  // 🔥 REVISI PAK HALIM: KUNCI OTOMATIS KE SEMESTER BERJALAN (TANPA DROPDOWN MANUAL)
+  String _semesterBerjalan = 'Semester 1 (Ganjil)'; 
+  String _selectedKategori = 'Ulangan Harian';
   String? _selectedMataPelajaran;
   List<String> _listMapel = [];
 
-  // Variabel untuk Filter Data
   String? _selectedFilterMapel;
 
   final _nilaiController = TextEditingController();
@@ -30,19 +30,34 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
   @override
   void initState() {
     super.initState();
+    _fetchSemesterBerjalan();
     _fetchData();
+  }
+
+  // Mengambil semester aktif dari tabel konfigurasi/pengaturan sistem
+  Future<void> _fetchSemesterBerjalan() async {
+    try {
+      final config = await _supabase.from('pengaturan_sistem').select().maybeSingle();
+      if (config != null && config['semester_aktif'] != null) {
+        String smt = config['semester_aktif'].toString();
+        setState(() {
+          _semesterBerjalan = smt.toLowerCase().contains('genap') || smt.contains('2')
+              ? 'Semester 2 (Genap)'
+              : 'Semester 1 (Ganjil)';
+        });
+      }
+    } catch (_) {
+      setState(() => _semesterBerjalan = 'Semester 1 (Ganjil)');
+    }
   }
 
   Future<void> _fetchData() async {
     try {
       final user = _supabase.auth.currentUser;
-
       final profileRes = await _supabase.from('profiles').select('role, mapel, mata_pelajaran').eq('id', user!.id).maybeSingle();
 
       if (profileRes != null) {
         String role = profileRes['role'] ?? 'guru';
-
-        // Toleransi pembacaan profil guru (mapel atau mata_pelajaran)
         String mapelGuru = profileRes['mapel'] ?? profileRes['mata_pelajaran'] ?? '';
 
         if (role == 'guru' && mapelGuru.isNotEmpty) {
@@ -61,7 +76,8 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
       }
 
       final siswaRes = await _supabase.from('profiles').select('id, full_name, kelas').eq('role', 'siswa').order('full_name', ascending: true);
-      final nilaiRes = await _supabase.from('nilai').select('*, profiles(full_name)').order('tanggal', ascending: false);
+      // 🔥 HANYA MENAMPILKAN NILAI PADA SEMESTER BERJALAN
+      final nilaiRes = await _supabase.from('nilai').select('*, profiles(full_name)').eq('semester', _semesterBerjalan).order('tanggal', ascending: false);
 
       if (mounted) {
         setState(() {
@@ -77,7 +93,6 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
 
   Future<void> _simpanNilai() async {
     if (_selectedSiswa == null || _nilaiController.text.isEmpty || _selectedMataPelajaran == null) {
-      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
       PopupService.show(context, 'Isi data siswa, mata pelajaran, dan nilai dengan lengkap!', isSuccess: false, judul: 'Form Tidak Lengkap');
       return;
     }
@@ -85,11 +100,13 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
     try {
       String rawValue = _nilaiController.text.replaceAll(',', '.');
       double? parsedValue = double.tryParse(rawValue);
-      if (parsedValue == null) throw 'Format angka pada nilai tidak valid.';
+      if (parsedValue == null || parsedValue < 0 || parsedValue > 100) {
+        throw 'Format angka pada nilai tidak valid (0 - 100).';
+      }
 
       await _supabase.from('nilai').insert({
         'siswa_id': _selectedSiswa,
-        'semester': _selectedSemester,
+        'semester': _semesterBerjalan, // 🔥 DIKUNCI OTOMATIS
         'kategori': _selectedKategori,
         'mapel': _selectedMataPelajaran,
         'nilai': parsedValue,
@@ -98,7 +115,6 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
       });
 
       if (!mounted) return;
-      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
       PopupService.show(context, 'Nilai siswa berhasil disimpan ke sistem!', isSuccess: true, judul: 'Berhasil');
 
       _nilaiController.clear();
@@ -107,7 +123,6 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
 
       _fetchData();
     } catch (e) {
-      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
       PopupService.show(context, 'Gagal menyimpan nilai: $e', isSuccess: false, judul: 'Terjadi Kesalahan');
     }
   }
@@ -141,6 +156,25 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
                     padding: const EdgeInsets.all(20.0),
                     child: ListView(
                       children: [
+                        // 🔥 BANNER INFORMASI SEMESTER BERJALAN (READ-ONLY)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.blue.shade200)),
+                          child: Row(
+                            children: [
+                              Icon(Icons.lock_clock_rounded, size: 18, color: Colors.blue.shade900),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  "Semester Berjalan: $_semesterBerjalan",
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
                         const Text('Pilih Siswa:', style: TextStyle(fontWeight: FontWeight.bold)), const SizedBox(height: 6),
                         DropdownButtonFormField<String>(
                           value: _selectedSiswa, isExpanded: true, decoration: const InputDecoration(border: OutlineInputBorder()),
@@ -155,29 +189,25 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
                           onChanged: (val) => setState(() => _selectedMataPelajaran = val),
                         ),
                         const SizedBox(height: 16),
-                        const Text('Pilih Semester:', style: TextStyle(fontWeight: FontWeight.bold)), const SizedBox(height: 6),
-                        DropdownButtonFormField<String>(
-                          value: _selectedSemester, decoration: const InputDecoration(border: OutlineInputBorder()),
-                          items: ['Semester 1 (Ganjil)', 'Semester 2 (Genap)'].map((sem) => DropdownMenuItem<String>(value: sem, child: Text(sem))).toList(),
-                          onChanged: (val) => setState(() => _selectedSemester = val!),
-                        ),
-                        const SizedBox(height: 16),
+
+                        // 🔥 DROPDOWN PILIH SEMESTER SUDAH DIHAPUS TOTAL DI SINI!
+                        
                         const Text('Kategori Nilai:', style: TextStyle(fontWeight: FontWeight.bold)), const SizedBox(height: 6),
                         DropdownButtonFormField<String>(
                           value: _selectedKategori, decoration: const InputDecoration(border: OutlineInputBorder()),
-                          items: ['Tugas', 'Praktek', 'Ulangan Harian', 'UTS', 'UAS'].map((cat) => DropdownMenuItem<String>(value: cat, child: Text(cat))).toList(),
+                          items: ['Ulangan Harian', 'Tugas', 'Praktek', 'PTS', 'PAS', 'UTS', 'UAS'].map((cat) => DropdownMenuItem<String>(value: cat, child: Text(cat))).toList(),
                           onChanged: (val) => setState(() => _selectedKategori = val!),
                         ),
                         const SizedBox(height: 16),
                         const Text('Nilai Angka:', style: TextStyle(fontWeight: FontWeight.bold)), const SizedBox(height: 6),
-                        TextField(controller: _nilaiController, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'Misal: 85.5', border: OutlineInputBorder())),
+                        TextField(controller: _nilaiController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(hintText: 'Misal: 85.5', border: OutlineInputBorder())),
                         const SizedBox(height: 16),
                         const Text('Keterangan (Opsional):', style: TextStyle(fontWeight: FontWeight.bold)), const SizedBox(height: 6),
                         TextField(controller: _keteranganController, decoration: const InputDecoration(hintText: 'Catatan...', border: OutlineInputBorder())),
                         const SizedBox(height: 24),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[900], foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                          onPressed: _simpanNilai, icon: const Icon(Icons.save), label: const Text('SIMPAN NILAI', style: TextStyle(fontWeight: FontWeight.bold)),
+                          onPressed: _simpanNilai, icon: const Icon(Icons.save), label: const Text('SIMPAN NILAI (SEMESTER BERJALAN)', style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
                       ],
                     ),
@@ -196,7 +226,7 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
                       ),
                       Expanded(
                         child: filteredNilai.isEmpty
-                            ? const Center(child: Text('Belum ada data nilai untuk mapel ini.', style: TextStyle(color: Colors.grey)))
+                            ? const Center(child: Text('Belum ada data nilai di semester berjalan ini.', style: TextStyle(color: Colors.grey)))
                             : ListView.builder(
                                 padding: const EdgeInsets.all(16), itemCount: filteredNilai.length,
                                 itemBuilder: (context, index) {
@@ -212,7 +242,6 @@ class _NilaiSiswaScreenState extends State<NilaiSiswaScreen> {
                                       trailing: IconButton(
                                         icon: const Icon(Icons.delete, color: Colors.red),
                                         onPressed: () {
-                                          // 🔥 KONFIRMASI HAPUS DI TENGAH LAYAR
                                           showDialog(
                                             context: context,
                                             builder: (ctx) => AlertDialog(

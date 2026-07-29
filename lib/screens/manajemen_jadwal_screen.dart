@@ -74,6 +74,11 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     String? selectedGuru = isEdit ? jadwal['guru_pengampu'] : null;
     String? selectedMapel = isEdit ? jadwal['mata_pelajaran'] : null;
     
+    // 🔥 REVISI DOSEN: VARIABEL RUANG KELAS & SEMESTER
+    final ruangController = TextEditingController(text: isEdit ? (jadwal['ruang_kelas'] ?? 'Lt. 2 - R. 05') : 'Lt. 2 - R. 05');
+    String selectedSemester = isEdit ? (jadwal['semester'] ?? 'Ganjil') : 'Ganjil';
+    final tahunController = TextEditingController(text: isEdit ? (jadwal['tahun_ajaran'] ?? '2025/2026') : '2025/2026');
+
     bool isIstirahat = isEdit && (selectedMapel?.toLowerCase().contains('istirahat') ?? false) || (selectedMapel?.toLowerCase().contains('ishoma') ?? false);
     String typeIstirahat = isIstirahat ? (selectedMapel ?? 'Istirahat 1') : 'Istirahat 1';
 
@@ -131,6 +136,18 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                     ),
                     const SizedBox(height: 12),
 
+                    // 🔥 REVISI DOSEN: INPUT RUANG KELAS & PERIODE
+                    Row(
+                      children: [
+                        Expanded(flex: 3, child: TextField(controller: ruangController, decoration: const InputDecoration(labelText: 'Ruang Kelas', border: OutlineInputBorder(), hintText: 'Lt. 2 - R. 05'))),
+                        const SizedBox(width: 12),
+                        Expanded(flex: 2, child: DropdownButtonFormField<String>(value: selectedSemester, items: ['Ganjil', 'Genap'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (val) => setDialogState(() => selectedSemester = val!), decoration: const InputDecoration(labelText: 'Semester', border: OutlineInputBorder()))),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(controller: tahunController, decoration: const InputDecoration(labelText: 'Tahun Ajaran', border: OutlineInputBorder(), hintText: '2025/2026')),
+                    const SizedBox(height: 12),
+
                     if (isIstirahat)
                       DropdownButtonFormField<String>(
                         value: typeIstirahat, items: ['Istirahat 1', 'Istirahat 2', 'Ishoma'].map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(),
@@ -150,7 +167,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
                         value: selectedMapel, hint: Text(selectedGuru == null ? 'Pilih Guru Dulu' : (currentMapelList.isEmpty ? 'Guru ini belum punya mapel' : 'Pilih Mata Pelajaran')),
-                        items: (selectedGuru == null || currentMapelList.isEmpty) ? null : currentMapelList.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                        items: (selectedGuru == null || currentMapelList.isEmpty) ? null : currentMapelList.map((m) => DropdownMenuItem(value: m, child: Text(m.toUpperCase()))).toList(),
                         onChanged: (selectedGuru == null || currentMapelList.isEmpty) ? null : (val) => setDialogState(() => selectedMapel = val),
                         decoration: InputDecoration(labelText: 'Mata Pelajaran', border: const OutlineInputBorder(), filled: (selectedGuru == null || currentMapelList.isEmpty), fillColor: (selectedGuru == null || currentMapelList.isEmpty) ? Colors.grey.shade200 : Colors.white),
                       ),
@@ -173,7 +190,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900),
                   onPressed: () async {
                     if (selectedHari == null || selectedKelas == null || selectedMapel == null || jamMulai == null || jamSelesai == null) {
-                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
                       PopupService.show(context, 'Harap lengkapi semua Pilihan dan Waktu!', isSuccess: false, judul: 'Peringatan'); 
                       return;
                     }
@@ -183,12 +199,12 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                     try {
                       final data = {
                         'hari': selectedHari, 'kelas': selectedKelas, 'mata_pelajaran': selectedMapel, 'guru_pengampu': isIstirahat ? '-' : selectedGuru, 'jam_mulai': formatMulai, 'jam_selesai': formatSelesai,
+                        'ruang_kelas': ruangController.text.trim(), 'semester': selectedSemester, 'tahun_ajaran': tahunController.text.trim()
                       };
                       if (isEdit) await _supabase.from('jadwal').update(data).eq('id', jadwal['id']);
                       else await _supabase.from('jadwal').insert(data);
                       
                       Navigator.pop(context); _fetchJadwal(); 
-                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
                       if (mounted) PopupService.show(context, 'Jadwal berhasil disimpan!', isSuccess: true);
                     } catch (e) { 
                       if (mounted) PopupService.show(context, 'Error: $e', isSuccess: false, judul: 'Gagal'); 
@@ -217,7 +233,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
               try { 
                 await _supabase.from('jadwal').delete().eq('id', id); 
                 _fetchJadwal(); 
-                // 🔥 DIUBAH KE POPUP TENGAH LAYAR
                 if (mounted) PopupService.show(context, 'Jadwal berhasil dihapus', isSuccess: true); 
               } 
               catch (e) { 
@@ -259,15 +274,18 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                       final jamMulai = jadwal['jam_mulai'] != null && jadwal['jam_mulai'].toString().length >= 5 ? jadwal['jam_mulai'].toString().substring(0, 5) : '00:00';
                       final jamSelesai = jadwal['jam_selesai'] != null && jadwal['jam_selesai'].toString().length >= 5 ? jadwal['jam_selesai'].toString().substring(0, 5) : '00:00';
                       
-                      bool isIstirahat = jadwal['mata_pelajaran'].toString().toLowerCase().contains('istirahat') || jadwal['mata_pelajaran'].toString().toLowerCase().contains('ishoma');
+                      // 🔥 REVISI DOSEN: HURUF KAPITAL & RUANG KELAS
+                      final mapel = (jadwal['mata_pelajaran'] ?? '-').toString().toUpperCase();
+                      final ruang = (jadwal['ruang_kelas'] ?? 'R. 101').toString();
+                      bool isIstirahat = mapel.contains('ISTIRAHAT') || mapel.contains('ISHOMA');
 
                       return Container(
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                         decoration: BoxDecoration(color: isIstirahat ? Colors.orange.shade50 : Colors.white, border: Border(left: BorderSide(color: isIstirahat ? Colors.orange : Colors.blue.shade900, width: 4)), boxShadow: [BoxShadow(color: Colors.grey.shade200, blurRadius: 2, offset: const Offset(0, 1))]),
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          title: Text('${jadwal['mata_pelajaran']}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isIstirahat ? Colors.orange.shade900 : Colors.black)),
-                          subtitle: isIstirahat ? Text('$jamMulai - $jamSelesai WIB', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.w600, fontSize: 12)) : Padding(padding: const EdgeInsets.only(top: 4), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Guru: ${jadwal['guru_pengampu']}', style: TextStyle(color: Colors.grey.shade700)), const SizedBox(height: 2), Text('Waktu: $jamMulai - $jamSelesai WIB', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w600))])),
+                          title: Text(mapel, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isIstirahat ? Colors.orange.shade900 : Colors.black)),
+                          subtitle: isIstirahat ? Text('$jamMulai - $jamSelesai WIB', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.w600, fontSize: 12)) : Padding(padding: const EdgeInsets.only(top: 4), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Guru: ${jadwal['guru_pengampu']} | Ruang: $ruang', style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('Waktu: $jamMulai - $jamSelesai WIB (${jadwal['semester'] ?? "Ganjil"})', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w600))])),
                           trailing: Row(mainAxisSize: MainAxisSize.min, children: [IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _showFormDialog(jadwal: jadwal)), IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 20), onPressed: () => _hapusJadwal(jadwal['id']))]),
                         ),
                       );

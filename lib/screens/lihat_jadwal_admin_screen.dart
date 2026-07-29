@@ -31,7 +31,6 @@ class _LihatJadwalAdminScreenState extends State<LihatJadwalAdminScreen> {
       ),
       body: Column(
         children: [
-          // Filter Kelas Atas
           Container(
             padding: const EdgeInsets.all(16),
             color: Colors.white,
@@ -68,7 +67,6 @@ class _LihatJadwalAdminScreenState extends State<LihatJadwalAdminScreen> {
             ),
           ),
 
-          // Tampilan List Jadwal Real-time
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _supabase
@@ -110,6 +108,11 @@ class _LihatJadwalAdminScreenState extends State<LihatJadwalAdminScreen> {
                   itemCount: dataJadwal.length,
                   itemBuilder: (context, index) {
                     final jadwal = dataJadwal[index];
+                    // 🔥 REVISI DOSEN: HURUF KAPITAL MUTLAK
+                    final mapel = (jadwal['mata_pelajaran'] ?? '-').toString().toUpperCase();
+                    // 🔥 REVISI DOSEN: RUANG KELAS
+                    final ruang = (jadwal['ruang_kelas'] ?? 'R. 101').toString();
+
                     return Card(
                       margin: const EdgeInsets.only(bottom: 12),
                       elevation: 0,
@@ -143,19 +146,22 @@ class _LihatJadwalAdminScreenState extends State<LihatJadwalAdminScreen> {
                                     ),
                                   ),
                                 ),
-                                Text(
-                                  jadwal['sesi'] ?? '-',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey,
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(color: Colors.teal.shade50, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.teal.shade200)),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.room, size: 12, color: Colors.teal.shade800),
+                                      const SizedBox(width: 4),
+                                      Text(ruang, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.teal.shade900)),
+                                    ],
                                   ),
                                 ),
                               ],
                             ),
                             const Divider(height: 20),
                             Text(
-                              jadwal['mata_pelajaran'] ?? '-',
+                              mapel,
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
@@ -164,19 +170,21 @@ class _LihatJadwalAdminScreenState extends State<LihatJadwalAdminScreen> {
                             ),
                             const SizedBox(height: 6),
                             Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Icon(
-                                  Icons.person,
-                                  size: 14,
-                                  color: Color(0xFF64748B),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.person, size: 14, color: Color(0xFF64748B)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Guru: ${jadwal['guru_pengampu'] ?? '-'}',
+                                      style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 6),
                                 Text(
-                                  'Guru: ${jadwal['guru_pengampu'] ?? '-'}',
-                                  style: const TextStyle(
-                                    color: Color(0xFF64748B),
-                                    fontSize: 13,
-                                  ),
+                                  '${jadwal['jam_mulai']?.toString().substring(0,5)} - ${jadwal['jam_selesai']?.toString().substring(0,5)} WIB',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 12),
                                 ),
                               ],
                             ),

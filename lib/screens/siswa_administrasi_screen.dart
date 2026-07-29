@@ -21,13 +21,19 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
   Map<String, dynamic> _biodata = {};
   List<Map<String, dynamic>> _riwayatBayar = [];
   
-  // Katalog Tagihan
-  final List<Map<String, dynamic>> _daftarTagihanWajib = [
-    {'jenis': 'LKS', 'nominal': 300000},
-    {'jenis': 'Kegiatan PKL', 'nominal': 400000},
-    {'jenis': 'Seragam', 'nominal': 850000},
-    {'jenis': 'Semester (PTS/PAS)', 'nominal': 200000},
-    {'jenis': 'SPP Bulanan', 'nominal': 250000}, 
+  // 🔥 REVISI DOSEN & AKUNTANSI: SPP DIHITUNG PER 1 SEMESTER (6 BULAN x Rp 250.000)
+  final Map<String, int> _katalogTagihan = {
+    'SPP Bulanan (1 Semester)': 1500000,
+    'Semester (PTS/PAS)': 200000,
+    'LKS': 300000,
+    'Seragam': 850000,
+    'Kegiatan PKL': 400000,
+    'Daftar Ulang': 1500000,
+  };
+
+  final List<String> _listBulan = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
   ];
 
   @override
@@ -37,6 +43,7 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
   }
 
   Future<void> _fetchDataKeuangan() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final prof = await _supabase.from('profiles').select('*').eq('id', widget.siswaId).single();
@@ -51,36 +58,38 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        PopupService.show(context, 'Gagal memuat data keuangan Anda.', isSuccess: false, judul: 'Koneksi Error');
+      }
     }
   }
 
-  void _bukaDialogUploadBukti(String jenisTagihan, int nominalAsli) {
+  // =========================================================================
+  // 🔥 DIALOG INPUT BAYAR / UNGGAH BUKTI TRANSAKSI OLEH SISWA
+  // =========================================================================
+  void _bukaDialogUploadBukti(String jenisTagihan, int sisaTagihan) {
     String kelasSiswa = (_biodata['kelas'] ?? '').toString().toLowerCase();
-    
     bool isKelas10 = RegExp(r'\b(10|x)\b').hasMatch(kelasSiswa);
-    bool isSPP = jenisTagihan == 'SPP Bulanan';
+    bool isSPP = jenisTagihan.contains('SPP');
     
-    int nominalFinal = nominalAsli;
+    // 🔥 AUTOFILL NOMINAL: Jika SPP otomatis Rp 250.000 (1 bulan), jika LKS/dll sesuai sisa tagihan
+    int nominalFinal = isSPP ? 250000 : sisaTagihan;
     if (isSPP && isKelas10) {
       nominalFinal = 0; // Gratis Khusus Kelas 10
     }
 
-    if (nominalFinal == 0) {
-      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
-      PopupService.show(
-        context, 
-        'Hore! Tagihan $jenisTagihan ini GRATIS untuk kelas Anda.', 
-        isSuccess: true, 
-        judul: 'Tagihan Gratis'
-      );
+    if (sisaTagihan == 0 || (nominalFinal == 0 && isKelas10)) {
+      PopupService.show(context, 'Hore! Tagihan $jenisTagihan ini sudah LUNAS atau GRATIS untuk kelas Anda.', isSuccess: true, judul: 'Tagihan Selesai');
       return;
     }
 
     final formatter = NumberFormat.currency(locale: 'id_ID', symbol: '', decimalDigits: 0);
     final nominalCtrl = TextEditingController(text: formatter.format(nominalFinal));
     final keteranganCtrl = TextEditingController();
+    String selectedBulan = _listBulan[DateTime.now().month - 1];
     XFile? fileBukti;
+    bool isSubmitting = false;
 
     showDialog(
       context: context,
@@ -96,128 +105,268 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Nominal Transfer (Rp)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red)),
-                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.blue.shade200)),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.blue.shade900, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              isSPP 
+                                ? 'Total 1 Semester: Rp 1.500.000\nSisa Belum Dibayar: Rp ${NumberFormat('#,###', 'id_ID').format(sisaTagihan)}'
+                                : 'Sisa yang harus dibayar: Rp ${NumberFormat('#,###', 'id_ID').format(sisaTagihan)}',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.blue.shade900, height: 1.3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (isSPP) ...[
+                      const Text('Pilih Bulan yang Dibayar:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        value: selectedBulan,
+                        decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
+                        items: _listBulan.map((b) => DropdownMenuItem(value: b, child: Text('SPP Bulan $b (Rp 250.000)', style: const TextStyle(fontSize: 12)))).toList(),
+                        onChanged: (val) { if (val != null) setStateDialog(() => selectedBulan = val); },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     TextField(
-                      controller: nominalCtrl, 
-                      readOnly: true, 
-                      decoration: InputDecoration(
-                        border: const OutlineInputBorder(), 
-                        prefixText: 'Rp ',
-                        filled: true,
-                        fillColor: Colors.grey.shade200, 
-                      )
+                      controller: nominalCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Nominal yang Dibayar (Rp)', prefixText: 'Rp ', border: OutlineInputBorder(), hintText: 'Bisa bayar penuh atau cicil'),
                     ),
                     const SizedBox(height: 12),
-                    
-                    if (isSPP) ...[
-                      const Text('Pembayaran Bulan', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      TextField(controller: keteranganCtrl, decoration: const InputDecoration(hintText: 'Cth: SPP Bulan Juli', border: OutlineInputBorder())),
-                      const SizedBox(height: 16),
-                    ],
-
-                    const Text('Upload Bukti Transfer / Struk', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    TextField(
+                      controller: keteranganCtrl,
+                      decoration: const InputDecoration(labelText: 'Catatan (Opsional)', border: OutlineInputBorder(), hintText: 'Cth: Transfer via BCA a.n Budi'),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Unggah Foto Bukti Transfer / Struk:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     InkWell(
                       onTap: () async {
                         final picker = ImagePicker();
-                        final foto = await picker.pickImage(source: ImageSource.gallery, imageQuality: 40);
+                        final foto = await picker.pickImage(source: ImageSource.gallery, imageQuality: 60);
                         if (foto != null) setStateDialog(() => fileBukti = foto);
                       },
                       child: Container(
                         height: 80, width: double.infinity, decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blue)),
-                        child: fileBukti == null 
-                            ? const Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.upload_file, color: Colors.blue), Text('Pilih Foto Galeri', style: TextStyle(color: Colors.blue, fontSize: 11))])
-                            : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.check_circle, color: Colors.green), SizedBox(width: 8), Text('Foto Terpilih', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))]),
+                        child: Center(
+                          child: fileBukti == null 
+                              ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.upload_file, color: Colors.blue.shade700, size: 28), const SizedBox(height: 4), Text('Pilih Foto Galeri', style: TextStyle(color: Colors.blue.shade700, fontSize: 11, fontWeight: FontWeight.w600))])
+                              : Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.check_circle, color: Colors.green, size: 24), const SizedBox(width: 8), Text('Bukti Terlampir (${fileBukti!.name})', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12))]),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
+                TextButton(onPressed: isSubmitting ? null : () => Navigator.pop(context), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900),
-                  onPressed: () async {
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  onPressed: isSubmitting ? null : () async {
+                    final nominalBersih = nominalCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
+                    final nominal = int.tryParse(nominalBersih);
+                    if (nominal == null || nominal <= 0) {
+                      PopupService.show(context, 'Nominal pembayaran tidak valid.', isSuccess: false, judul: 'Peringatan'); return;
+                    }
                     if (fileBukti == null) {
-                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
-                      PopupService.show(
-                        context, 
-                        'Harap upload foto bukti transfer atau struk pembayaran Anda terlebih dahulu!', 
-                        isSuccess: false, 
-                        judul: 'Bukti Kosong'
-                      );
-                      return;
+                      PopupService.show(context, 'Wajib melampirkan foto bukti transfer/pembayaran!', isSuccess: false, judul: 'Bukti Kosong'); return;
                     }
-                    if (isSPP && keteranganCtrl.text.trim().isEmpty) {
-                      // 🔥 DIUBAH KE POPUP TENGAH LAYAR
-                      PopupService.show(
-                        context, 
-                        'Bulan pembayaran SPP wajib diisi agar tidak terjadi kesalahan pencatatan!', 
-                        isSuccess: false, 
-                        judul: 'Form Belum Lengkap'
-                      );
-                      return;
+
+                    setStateDialog(() => isSubmitting = true);
+                    try {
+                      final user = _supabase.auth.currentUser;
+                      if (user == null) throw 'Sesi habis, silakan login ulang.';
+
+                      final ekstensi = fileBukti!.path.split('.').last;
+                      final namaFile = 'BUKTI_${user.id}_${DateTime.now().millisecondsSinceEpoch}.$ekstensi';
+                      await _supabase.storage.from('foto_absensi').upload(namaFile, File(fileBukti!.path));
+                      final urlBukti = _supabase.storage.from('foto_absensi').getPublicUrl(namaFile);
+
+                      // 🔥 KETERANGAN OTOMATIS MENYEBUT BULAN YANG DIBAYAR
+                      String ketFinal = isSPP ? 'SPP Bulan $selectedBulan' : jenisTagihan;
+                      if (keteranganCtrl.text.trim().isNotEmpty) {
+                        ketFinal += ' - ${keteranganCtrl.text.trim()}';
+                      }
+
+                      await _supabase.from('pembayaran').insert({
+                        'siswa_id': user.id,
+                        'jenis_pembayaran': jenisTagihan,
+                        'bulan_tagihan': ketFinal,
+                        'nominal': nominal,
+                        'status': 'Pending',
+                        'foto_bukti': urlBukti,
+                        'tanggal_bayar': DateTime.now().toIso8601String(),
+                        'penerima': 'Menunggu Verifikasi TU',
+                      });
+
+                      if (!mounted) return;
+                      Navigator.pop(context);
+                      _fetchDataKeuangan();
+                      PopupService.show(context, 'Pembayaran berhasil dikirim!\nSilakan tunggu admin Tata Usaha memverifikasi bukti transfer Anda.', isSuccess: true, judul: 'Terkirim!');
+                    } catch (e) {
+                      setStateDialog(() => isSubmitting = false);
+                      PopupService.show(context, 'Gagal mengirim pembayaran: $e', isSuccess: false, judul: 'Gagal');
                     }
-                    
-                    Navigator.pop(context);
-                    String ketAkhir = isSPP ? keteranganCtrl.text.trim() : '-';
-                    _prosesUploadPembayaran(jenisTagihan, nominalFinal.toString(), ketAkhir, fileBukti!);
                   },
-                  child: const Text('Kirim ke TU', style: TextStyle(color: Colors.white)),
+                  child: isSubmitting ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('Kirim Pembayaran', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ],
             );
           },
         );
-      }
+      },
     );
   }
 
-  Future<void> _prosesUploadPembayaran(String jenis, String nominalStr, String keterangan, XFile foto) async {
-    setState(() => _isUploading = true);
-    try {
-      String ext = foto.path.split('.').last;
-      String namaFile = 'BUKTI_${widget.siswaId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
-      
-      await _supabase.storage.from('foto_absensi').upload(namaFile, File(foto.path));
-      String urlBukti = _supabase.storage.from('foto_absensi').getPublicUrl(namaFile);
+  // =========================================================================
+  // 🔥 REVISI PAK HALIM: DETAIL HISTORI ON-TAP (BOTTOM SHEET)
+  // =========================================================================
+  void _bukaDetailHistori(String kategori, List<Map<String, dynamic>> riwayatItem, int totalDibayar, int kewajiban, int sisaKurang, bool isLunas) {
+    final formatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
-      await _supabase.from('pembayaran').insert({
-        'siswa_id': widget.siswaId,
-        'jenis_pembayaran': jenis,
-        'bulan_tagihan': keterangan,
-        'nominal': int.parse(nominalStr.replaceAll(RegExp(r'[^0-9]'), '')),
-        'status': 'Pending', 
-        'tanggal_bayar': DateTime.now().toIso8601String(),
-        'penerima': 'Menunggu Verifikasi',
-        'foto_bukti': urlBukti
-      });
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return SizedBox(
+          height: MediaQuery.of(context).size.height * 0.75,
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: isLunas ? Colors.green.shade50 : Colors.blue.shade50, borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
+                child: Row(
+                  children: [
+                    Icon(isLunas ? Icons.check_circle : Icons.history_rounded, color: isLunas ? Colors.green : const Color(0xFF1E40AF), size: 28),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Histori Pembayaran', style: TextStyle(fontSize: 11, color: isLunas ? Colors.green.shade800 : Colors.blue.shade800, fontWeight: FontWeight.bold)),
+                          Text(kategori, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                        ],
+                      ),
+                    ),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                  ],
+                ),
+              ),
+              
+              // RINGKASAN SALDO
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Colors.grey.shade50,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _itemSummary('Total Biaya', formatter.format(kewajiban), Colors.black87),
+                    _itemSummary('Sudah Bayar', formatter.format(totalDibayar), Colors.green.shade700),
+                    _itemSummary('Sisa Kurang', formatter.format(sisaKurang), isLunas ? Colors.green : Colors.red.shade700),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
 
-      _fetchDataKeuangan();
-      if(mounted) {
-        // 🔥 DIUBAH KE POPUP TENGAH LAYAR
-        PopupService.show(
-          context, 
-          'Bukti pembayaran berhasil dikirim ke sistem. Silakan tunggu verifikasi dari pihak Tata Usaha.', 
-          isSuccess: true, 
-          judul: 'Terkirim!'
+              // DAFTAR RIWAYAT
+              Expanded(
+                child: riwayatItem.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.receipt_long_outlined, size: 56, color: Colors.grey.shade300),
+                            const SizedBox(height: 12),
+                            const Text('Belum ada riwayat transaksi\nuntuk tagihan ini.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: riwayatItem.length,
+                        itemBuilder: (context, index) {
+                          final b = riwayatItem[index];
+                          final nominal = b['nominal'] ?? 0;
+                          final status = (b['status'] ?? 'Pending').toString().toUpperCase();
+                          final ket = (b['bulan_tagihan'] ?? '-').toString();
+                          final penerima = (b['penerima'] ?? '-').toString();
+
+                          String waktuTampil = '-';
+                          final rawDate = (b['tanggal_bayar'] ?? b['created_at'] ?? '').toString();
+                          try {
+                            if (rawDate.isNotEmpty) {
+                              waktuTampil = DateFormat('dd MMMM yyyy | HH:mm WIB').format(DateTime.parse(rawDate).toLocal());
+                            }
+                          } catch (_) {}
+
+                          Color badgeColor = Colors.orange;
+                          if (status == 'LUNAS') badgeColor = Colors.green;
+                          if (status == 'DITOLAK') badgeColor = Colors.red;
+
+                          return Card(
+                            elevation: 0,
+                            margin: const EdgeInsets.only(bottom: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade300)),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(formatter.format(nominal), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue.shade900)),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(color: badgeColor.withOpacity(0.15), borderRadius: BorderRadius.circular(6), border: Border.all(color: badgeColor.withOpacity(0.4))),
+                                        child: Text(status, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: badgeColor)),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
+                                      const SizedBox(width: 6),
+                                      Text(waktuTampil, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text('Keterangan: $ket', style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                                  const SizedBox(height: 2),
+                                  Text('Verifikator TU: $penerima', style: const TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic)),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         );
-      }
-    } catch (e) {
-      if(mounted) {
-        // 🔥 DIUBAH KE POPUP TENGAH LAYAR
-        PopupService.show(
-          context, 
-          'Gagal mengirim pembayaran: $e', 
-          isSuccess: false, 
-          judul: 'Terjadi Kesalahan'
-        );
-      }
-    } finally {
-      setState(() => _isUploading = false);
-    }
+      },
+    );
+  }
+
+  Widget _itemSummary(String label, String value, Color color) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color)),
+      ],
+    );
   }
 
   @override
@@ -227,90 +376,156 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
     String kelasSiswa = (_biodata['kelas'] ?? '').toString().toLowerCase();
     bool isKelas10 = RegExp(r'\b(10|x)\b').hasMatch(kelasSiswa);
 
+    // Mengelompokkan riwayat pembayaran siswa berdasarkan jenis tagihan
+    Map<String, List<Map<String, dynamic>>> groupedBayar = {};
+    for (var b in _riwayatBayar) {
+      final jenis = (b['jenis_pembayaran'] ?? 'Lainnya').toString();
+      groupedBayar.putIfAbsent(jenis, () => []).add(b);
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(title: const Text('Tagihan & SPP', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)), backgroundColor: Colors.white, elevation: 0.5, leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.black), onPressed: () => Navigator.pop(context))),
+      appBar: AppBar(
+        title: const Text('Tagihan & SPP', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A))),
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        iconTheme: const IconThemeData(color: Colors.black),
+      ),
       body: _isLoading || _isUploading 
         ? const Center(child: CircularProgressIndicator())
-        : ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(20), decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.blue.shade900, Colors.blue.shade700]), borderRadius: BorderRadius.circular(16)),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Informasi Keuangan', style: TextStyle(color: Colors.white70, fontSize: 12)), const SizedBox(height: 4),
-                    Text(_biodata['full_name'] ?? 'Siswa', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: Text('Kelas: ${_biodata['kelas'] ?? '-'}', style: const TextStyle(color: Colors.white, fontSize: 12))),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              const Text('Katalog Tagihan Tersedia', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
-              const SizedBox(height: 12),
-              
-              ..._daftarTagihanWajib.map((tagihan) {
-                bool isSPP = tagihan['jenis'] == 'SPP Bulanan';
-                bool isGratis = isSPP && isKelas10;
-                String nominalTampil = isGratis ? 'GRATIS (Siswa Kelas 10)' : formatter.format(tagihan['nominal']);
-
-                return Card(
-                  elevation: 0, margin: const EdgeInsets.only(bottom: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade300)),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    leading: CircleAvatar(backgroundColor: Colors.blue.shade50, child: const Icon(Icons.receipt_long, color: Colors.blue)),
-                    title: Text(tagihan['jenis'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    subtitle: Text(nominalTampil, style: TextStyle(color: isGratis ? Colors.green : Colors.grey.shade700, fontWeight: FontWeight.w600, fontSize: 12)),
-                    trailing: isGratis 
-                      ? const Icon(Icons.check_circle, color: Colors.green)
-                      : ElevatedButton(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                          onPressed: () => _bukaDialogUploadBukti(tagihan['jenis'], tagihan['nominal']),
-                          child: const Text('Bayar', style: TextStyle(color: Colors.white, fontSize: 12)),
-                        ),
+        : RefreshIndicator(
+            onRefresh: _fetchDataKeuangan,
+            color: const Color(0xFF1E40AF),
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20), decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.blue.shade900, Colors.blue.shade700]), borderRadius: BorderRadius.circular(16)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Informasi Keuangan Siswa', style: TextStyle(color: Colors.white70, fontSize: 12)), const SizedBox(height: 4),
+                      Text(_biodata['full_name'] ?? 'Siswa', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: Text('Kelas: ${_biodata['kelas'] ?? '-'}', style: const TextStyle(color: Colors.white, fontSize: 12))),
+                    ],
                   ),
-                );
-              }).toList(),
+                ),
+                const SizedBox(height: 24),
+                const Text('DAFTAR KEWAJIBAN & STATUS (MASTER VIEW)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B), letterSpacing: 0.5)),
+                const SizedBox(height: 4),
+                const Text('Klik pada kartu untuk melihat rincian tanggal & jam riwayat pembayaran.', style: TextStyle(color: Colors.grey, fontSize: 11, fontStyle: FontStyle.italic)),
+                const SizedBox(height: 12),
+                
+                // 🔥 REVISI PAK HALIM: 1 DAFTAR TUNGGAL (UNIFIED LIST)
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _katalogTagihan.length,
+                  itemBuilder: (context, index) {
+                    final namaTagihan = _katalogTagihan.keys.elementAt(index);
+                    final int kewajibanAsli = _katalogTagihan[namaTagihan]!;
+                    final listTransaksi = groupedBayar[namaTagihan] ?? [];
 
-              const SizedBox(height: 24),
-              const Text('Riwayat & Status Pembayaran', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
-              const SizedBox(height: 12),
+                    bool isSPP = namaTagihan.contains('SPP');
+                    bool isGratis = isSPP && isKelas10;
+                    int kewajiban = isGratis ? 0 : kewajibanAsli;
 
-              if (_riwayatBayar.isEmpty)
-                 const Center(child: Padding(padding: EdgeInsets.all(20), child: Text('Belum ada riwayat pembayaran.', style: TextStyle(color: Colors.grey))))
-              else
-                ..._riwayatBayar.map((bayar) {
-                  bool isLunas = bayar['status'].toString().toUpperCase() == 'LUNAS';
-                  return Card(
-                    elevation: 0, margin: const EdgeInsets.only(bottom: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade300)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    // Hitung total yang SUDAH dibayar (Hanya hitung yang LUNAS / ACC TU)
+                    int totalDibayar = 0;
+                    bool adaPending = false;
+                    for (var t in listTransaksi) {
+                      final st = (t['status'] ?? '').toString().toUpperCase();
+                      if (st == 'LUNAS') {
+                        totalDibayar += (t['nominal'] is num) ? (t['nominal'] as num).toInt() : 0;
+                      } else if (st == 'PENDING') {
+                        adaPending = true;
+                      }
+                    }
+
+                    final int sisaKurang = (kewajiban - totalDibayar) > 0 ? (kewajiban - totalDibayar) : 0;
+                    // 🔥 LOGIKA LUNAS MUTLAK: Sisa = 0 dan sudah ada pembayaran masuk (Atau gratis)
+                    final bool isLunas = isGratis || (sisaKurang == 0 && totalDibayar > 0);
+
+                    return Card(
+                      elevation: 0,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        // 🔥 BORDER HIJAU JIKA LUNAS, BORDER ABU JIKA BELUM
+                        side: BorderSide(color: isLunas ? Colors.green.shade400 : Colors.grey.shade300, width: isLunas ? 1.5 : 1.0),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        // 🔥 MEMBUKA HISTORI DETAIL SAAT DIKLIK
+                        onTap: () => _bukaDetailHistori(namaTagihan, listTransaksi, totalDibayar, kewajiban, sisaKurang, isLunas),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
                             children: [
-                              Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: isLunas ? Colors.green.shade50 : Colors.orange.shade50, borderRadius: BorderRadius.circular(6)), child: Text(bayar['status'].toString().toUpperCase(), style: TextStyle(color: isLunas ? Colors.green : Colors.orange, fontWeight: FontWeight.bold, fontSize: 10))),
-                              Text(bayar['bulan_tagihan'] ?? '-', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                              // IKON KIRI
+                              CircleAvatar(
+                                radius: 24,
+                                backgroundColor: isLunas ? Colors.green.shade50 : (adaPending ? Colors.orange.shade50 : Colors.blue.shade50),
+                                child: Icon(
+                                  isLunas ? Icons.verified_rounded : (adaPending ? Icons.access_time_filled_rounded : Icons.receipt_long_rounded),
+                                  color: isLunas ? Colors.green : (adaPending ? Colors.orange : Colors.blue.shade900),
+                                  size: 26,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+
+                              // TEKS TENGAH (INFORMASI SISA / LUNAS)
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(namaTagihan, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
+                                    const SizedBox(height: 4),
+                                    
+                                    // 🔥 LOGIKA KONDISIONAL BARU SESUAI KRITIK USER
+                                    if (isGratis)
+                                      const Text('GRATIS (Siswa Kelas 10)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.green))
+                                    else if (isLunas)
+                                      const Text('TELAH DIBAYAR LUNAS', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.green))
+                                    else if (totalDibayar > 0) ...[
+                                      // KASUS CICILAN: MUNCUL SISA KURANG
+                                      Text('Total: ${formatter.format(kewajiban)} | Masuk: ${formatter.format(totalDibayar)}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                      Text('Sisa Kurang: ${formatter.format(sisaKurang)}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red.shade700)),
+                                      if (adaPending)
+                                        Text('⏳ Ada pembayaran menunggu verifikasi TU', style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.orange.shade800)),
+                                    ] else ...[
+                                      // KASUS BELUM BAYAR SAMA SEKALI: BERSIH TANPA TEKS SISA KURANG
+                                      Text('Total Tagihan: ${formatter.format(kewajiban)}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                      Text('Status: Belum Dibayar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red.shade700)),
+                                      if (adaPending)
+                                        Text('⏳ Ada pembayaran menunggu verifikasi TU', style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.orange.shade800)),
+                                    ],
+                                  ],
+                                ),
+                              ),
+
+                              // 🔥 REVISI PAK HALIM: JIKA LUNAS MUNCUL CEKLIS HIJAU, JIKA BELUM MUNCUL TOMBOL BAYAR
+                              if (isLunas)
+                                const Padding(
+                                  padding: EdgeInsets.only(left: 8),
+                                  child: Icon(Icons.check_circle, color: Colors.green, size: 34),
+                                )
+                              else
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E40AF), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)),
+                                  onPressed: () => _bukaDialogUploadBukti(namaTagihan, sisaKurang),
+                                  child: const Text('BAYAR', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                ),
                             ],
                           ),
-                          const SizedBox(height: 12),
-                          Text(bayar['jenis_pembayaran'] ?? '-', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                          const SizedBox(height: 4),
-                          Text(formatter.format(bayar['nominal'] ?? 0), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade900)),
-                          if (!isLunas) ...[
-                            const SizedBox(height: 8),
-                            const Text('*Menunggu diverifikasi oleh pihak Tata Usaha', style: TextStyle(fontSize: 10, color: Colors.red, fontStyle: FontStyle.italic))
-                          ]
-                        ],
+                        ),
                       ),
-                    ),
-                  );
-                }).toList(),
-            ],
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
     );
   }

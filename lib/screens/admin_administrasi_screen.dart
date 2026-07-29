@@ -114,7 +114,6 @@ class _AdminAdministrasiScreenState extends State<AdminAdministrasiScreen>
     }
   }
 
-  // 🔥 FUNGSI DIUBAH KE POPUP TENGAH LAYAR
   void _showSnackBar(String pesan, Color warna) {
     if (!mounted) return;
     final bool isSuccess = (warna == Colors.green || warna == Colors.blue);
@@ -515,7 +514,7 @@ class _AdminAdministrasiScreenState extends State<AdminAdministrasiScreen>
 }
 
 // =========================================================================
-// HALAMAN KASIR TU & CETAK KWITANSI PDF
+// 🔥 REVISI PAK HALIM: KASIR TU DENGAN MASTER-DETAIL LUNAS & CICILAN
 // =========================================================================
 class DetailKasirScreen extends StatefulWidget {
   final Map<String, dynamic> siswaData;
@@ -540,7 +539,6 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
     'Lainnya',
   ];
 
-  // Sumber tunggal harga default per jenis tagihan -> dipakai untuk autofill nominal
   final Map<String, int> _hargaTagihan = {
     'SPP Bulanan': 250000,
     'Semester (PTS/PAS)': 200000,
@@ -601,7 +599,6 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
     }
   }
 
-  // 🔥 FUNGSI DIUBAH KE POPUP TENGAH LAYAR
   void _showSnackBar(String pesan, Color warna) {
     if (!mounted) return;
     final bool isSuccess = (warna == Colors.green || warna == Colors.blue);
@@ -613,10 +610,6 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
     );
   }
 
-  // ==============================================================
-  // DIALOG INPUT TERIMA UANG (KASIR MANUAL)
-  // Autofill nominal saat jenis tagihan dipilih + bulan tersambung ke DB
-  // ==============================================================
   void _bukaDialogInputBayar() {
     String selectedJenis = 'SPP Bulanan';
     String selectedBulan = '-';
@@ -645,7 +638,6 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // -- Dropdown Jenis Tagihan: memicu autofill nominal --
                     DropdownButtonFormField<String>(
                       value: selectedJenis,
                       decoration: const InputDecoration(
@@ -661,7 +653,6 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
                         if (val == null) return;
                         setStateDialog(() {
                           selectedJenis = val;
-                          // AUTOFILL NOMINAL sesuai katalog harga
                           nominalCtrl.text = (_hargaTagihan[val] ?? 0)
                               .toString();
                           if (!val.contains('SPP')) selectedBulan = '-';
@@ -669,7 +660,6 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
                       },
                     ),
                     const SizedBox(height: 12),
-                    // -- Dropdown Bulan hanya untuk SPP, tersambung ke keterangan yang disimpan ke DB --
                     if (isSPP) ...[
                       DropdownButtonFormField<String>(
                         value: selectedBulan,
@@ -789,8 +779,7 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
       await _supabase.from('pembayaran').insert({
         'siswa_id': siswaId,
         'jenis_pembayaran': jenis,
-        'bulan_tagihan':
-            keterangan, // -> otomatis tersimpan ke DB dari dropdown bulan
+        'bulan_tagihan': keterangan,
         'nominal': nominal,
         'status': 'LUNAS',
         'tanggal_bayar': DateTime.now().toIso8601String(),
@@ -809,9 +798,94 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
     }
   }
 
-  // ==============================================================
-  // CETAK KWITANSI PDF
-  // ==============================================================
+  // 🔥 FUNGSI DIALOG DETAIL RIWAYAT TRANSAKSI (MASTER-DETAIL VIEW)
+  void _bukaDialogHistoriTagihan(String kategori, List<Map<String, dynamic>> listBayar, int totalMasuk, int kewajiban) {
+    final formatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+    final int sisaKurang = (kewajiban - totalMasuk) > 0 ? (kewajiban - totalMasuk) : 0;
+    final bool isLunas = sisaKurang == 0 && totalMasuk > 0;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(isLunas ? Icons.check_circle : Icons.warning_amber_rounded, color: isLunas ? Colors.green : Colors.orange),
+            const SizedBox(width: 10),
+            Expanded(child: Text('Riwayat: $kategori', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: isLunas ? Colors.green.shade50 : Colors.orange.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: isLunas ? Colors.green.shade200 : Colors.orange.shade200)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Total Kewajiban: ${formatter.format(kewajiban)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    Text('Sudah Dibayar: ${formatter.format(totalMasuk)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green.shade800)),
+                    Text('Sisa Kekurangan: ${formatter.format(sisaKurang)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isLunas ? Colors.green.shade900 : Colors.red.shade700)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text('Daftar Tanggal & Jam Pembayaran:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const Divider(),
+              if (listBayar.isEmpty)
+                const Padding(padding: EdgeInsets.all(20), child: Center(child: Text('Belum ada transaksi untuk tagihan ini.', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic))))
+              else
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: listBayar.length,
+                  itemBuilder: (context, i) {
+                    final b = listBayar[i];
+                    final rawDate = (b['tanggal_bayar'] ?? b['created_at'] ?? '').toString();
+                    String tglTampil = rawDate;
+                    try {
+                      if (rawDate.isNotEmpty) tglTampil = DateFormat('dd MMMM yyyy - HH:mm WIB').format(DateTime.parse(rawDate).toLocal());
+                    } catch (_) {}
+                    final nom = b['nominal'] ?? 0;
+                    final ket = (b['bulan_tagihan'] ?? '-').toString();
+                    final penerima = (b['penerima'] ?? 'Admin TU').toString();
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(formatter.format(nom), style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900, fontSize: 14)),
+                              IconButton(icon: const Icon(Icons.print, color: Colors.red, size: 18), tooltip: 'Cetak Kwitansi', padding: EdgeInsets.zero, constraints: const BoxConstraints(), onPressed: () => _cetakKwitansiPDF(b)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text('Waktu: $tglTampil', style: const TextStyle(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.w600)),
+                          Text('Keterangan: $ket | Kasir: $penerima', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Tutup', style: TextStyle(fontWeight: FontWeight.bold))),
+        ],
+      ),
+    );
+  }
+
   Future<void> _cetakKwitansiPDF(Map<String, dynamic> dataBayar) async {
     try {
       final pdf = pw.Document();
@@ -977,6 +1051,7 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
     final namaSiswa = (widget.siswaData['full_name'] ?? '-').toString();
     final nisnSiswa = (widget.siswaData['nisn'] ?? '-').toString();
     final kelasSiswa = (widget.siswaData['kelas'] ?? '-').toString();
+    final formatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -1054,159 +1129,76 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
                       ],
                     ),
                   ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Daftar Kewajiban & Status Lunas (Master-Detail)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B))),
+                    ),
+                  ),
                   Expanded(
                     child: ListView.builder(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: _kategoriFolder.length,
                       itemBuilder: (context, index) {
                         final namaKategori = _kategoriFolder[index];
-                        final listBayarKategori =
-                            groupedRiwayat[namaKategori] ?? [];
-                        final formatter = NumberFormat.currency(
-                          locale: 'id_ID',
-                          symbol: 'Rp ',
-                          decimalDigits: 0,
-                        );
+                        final listBayarKategori = groupedRiwayat[namaKategori] ?? [];
+                        
                         double totalMasuk = 0;
                         for (var b in listBayarKategori) {
                           if ((b['status'] ?? '') == 'LUNAS') {
-                            totalMasuk += (b['nominal'] is num)
-                                ? (b['nominal'] as num).toDouble()
-                                : 0;
+                            totalMasuk += (b['nominal'] is num) ? (b['nominal'] as num).toDouble() : 0;
                           }
                         }
+
+                        final int kewajiban = _hargaTagihan[namaKategori] ?? 0;
+                        final int sisa = (kewajiban - totalMasuk.toInt()) > 0 ? (kewajiban - totalMasuk.toInt()) : 0;
+                        final bool isLunas = sisa == 0 && totalMasuk > 0;
 
                         return Card(
                           elevation: 0,
                           margin: const EdgeInsets.only(bottom: 12),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(color: Colors.grey.shade300),
+                            side: BorderSide(color: isLunas ? Colors.green.shade400 : Colors.grey.shade300, width: isLunas ? 1.5 : 1.0),
                           ),
-                          child: ExpansionTile(
-                            leading: const Icon(
-                              Icons.folder,
-                              color: Colors.amber,
-                              size: 36,
-                            ),
-                            title: Text(
-                              namaKategori,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
-                            ),
-                            subtitle: Text(
-                              '${listBayarKategori.length} Transaksi | Lunas: ${formatter.format(totalMasuk)}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            children: listBayarKategori.isEmpty
-                                ? [
-                                    const Padding(
-                                      padding: EdgeInsets.all(16.0),
-                                      child: Text(
-                                        'Belum ada riwayat pembayaran.',
-                                        style: TextStyle(
-                                          color: Colors.grey,
-                                          fontStyle: FontStyle.italic,
-                                        ),
-                                      ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => _bukaDialogHistoriTagihan(namaKategori, listBayarKategori, totalMasuk.toInt(), kewajiban),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 24,
+                                    backgroundColor: isLunas ? Colors.green.shade100 : Colors.orange.shade100,
+                                    child: Icon(
+                                      isLunas ? Icons.check_circle : Icons.warning_amber_rounded,
+                                      color: isLunas ? Colors.green.shade800 : Colors.orange.shade800,
+                                      size: 28,
                                     ),
-                                  ]
-                                : listBayarKategori.map((bayar) {
-                                    final isLunas =
-                                        (bayar['status'] ?? '') == 'LUNAS';
-                                    final nominal = bayar['nominal'] ?? 0;
-                                    final bulanTagihan =
-                                        (bayar['bulan_tagihan'] ?? '-')
-                                            .toString();
-                                    final penerima = (bayar['penerima'] ?? '-')
-                                        .toString();
-                                    final statusTampil =
-                                        (bayar['status'] ?? '-')
-                                            .toString()
-                                            .toUpperCase();
-
-                                    return Container(
-                                      decoration: BoxDecoration(
-                                        border: Border(
-                                          top: BorderSide(
-                                            color: Colors.grey.shade200,
-                                          ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          namaKategori,
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A)),
                                         ),
-                                      ),
-                                      padding: const EdgeInsets.all(16),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 4,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: isLunas
-                                                        ? Colors.green.shade50
-                                                        : Colors.orange.shade50,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                      6,
-                                                    ),
-                                                  ),
-                                                  child: Text(
-                                                    statusTampil,
-                                                    style: TextStyle(
-                                                      color: isLunas
-                                                          ? Colors.green
-                                                          : Colors.orange,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 10,
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  formatter.format(nominal),
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 16,
-                                                    color: Colors.blue.shade900,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  '$bulanTagihan | Oleh: $penerima',
-                                                  style: const TextStyle(
-                                                    fontSize: 11,
-                                                    color: Colors.grey,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          if (isLunas)
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.print,
-                                                color: Colors.red,
-                                              ),
-                                              tooltip: 'Cetak Kwitansi PDF',
-                                              onPressed: () =>
-                                                  _cetakKwitansiPDF(bayar),
-                                            ),
-                                        ],
-                                      ),
-                                    );
-                                  }).toList(),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          isLunas ? 'LUNAS SEPENUHNYA' : (totalMasuk > 0 ? 'BELUM LUNAS (Sisa: ${formatter.format(sisa)})' : 'BELUM ADA PEMBAYARAN'),
+                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: isLunas ? Colors.green.shade700 : Colors.orange.shade800),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey),
+                                ],
+                              ),
+                            ),
                           ),
                         );
                       },
