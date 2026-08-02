@@ -3,10 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:excel/excel.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart'; // Tambahkan ini
-import 'package:cross_file/cross_file.dart'; // Tambahkan ini
+import 'package:share_plus/share_plus.dart'; 
+import 'package:cross_file/cross_file.dart'; 
 
-// 🔥 PENTING: Import halaman E-Rapor milik siswa
 import 'nilai_rapor_screen.dart';
 
 class RekapNilaiAdminScreen extends StatefulWidget {
@@ -23,7 +22,7 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
   List<String> _listKelas = [];
   String? _selectedKelas;
   List<Map<String, dynamic>> _listSiswa = [];
-  String _searchQuery = ''; // 🔥 Menambahkan fitur pencarian
+  String _searchQuery = ''; 
 
   @override
   void initState() {
@@ -75,6 +74,7 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
     }
   }
 
+  // 🔥 FORMAT EXCEL DIRAPIKAN SESUAI INSTRUKSI (Harian, Praktek, PTS, PAS, Akhir, Mutu)
   Future<void> _exportExcelSatuKelas() async {
     if (_selectedKelas == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -124,55 +124,94 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
             'nama': dataSiswa['full_name'] ?? '-',
             'nisn': dataSiswa['nisn'] ?? '-',
             'mapel': mapel,
+            'harian': 0.0,
             'tugas': 0.0,
-            'uts': 0.0,
-            'uas': 0.0,
+            'praktek': 0.0,
+            'pts': 0.0,
+            'pas': 0.0,
           };
         }
 
         String kategori = (item['kategori'] ?? '').toString().toLowerCase();
         double nilai = double.tryParse(item['nilai']?.toString() ?? '0') ?? 0;
 
-        if (kategori.contains('tugas') || kategori.contains('harian'))
-          rekapData[key]!['tugas'] = nilai;
-        else if (kategori.contains('uts') || kategori.contains('pts'))
-          rekapData[key]!['uts'] = nilai;
-        else if (kategori.contains('uas') || kategori.contains('pas'))
-          rekapData[key]!['uas'] = nilai;
+        if (kategori.contains('harian') || kategori.contains('ulangan')) {
+            rekapData[key]!['harian'] = nilai;
+        } else if (kategori.contains('tugas')) {
+            rekapData[key]!['tugas'] = nilai;
+        } else if (kategori.contains('praktek')) {
+            rekapData[key]!['praktek'] = nilai;
+        } else if (kategori.contains('uts') || kategori.contains('pts')) {
+            rekapData[key]!['pts'] = nilai;
+        } else if (kategori.contains('uas') || kategori.contains('pas')) {
+            rekapData[key]!['pas'] = nilai;
+        }
       }
 
       var excel = Excel.createExcel();
       Sheet sheetObject = excel['Rekap_Kelas_$_selectedKelas'];
       excel.setDefaultSheet('Rekap_Kelas_$_selectedKelas');
 
+      // Styling untuk header
+      CellStyle headerStyle = CellStyle(
+        bold: true,
+        horizontalAlign: HorizontalAlign.Center,
+        verticalAlign: VerticalAlign.Center,
+      );
+
       sheetObject.appendRow([
-        TextCellValue('REKAPITULASI NILAI KELAS $_selectedKelas'),
+        TextCellValue('REKAPITULASI NILAI KELAS $_selectedKelas')
       ]);
       sheetObject.appendRow([TextCellValue('')]);
-      sheetObject.appendRow([
+      
+      // Header Kolom
+      var headerRow = [
         TextCellValue('Nama Siswa'),
         TextCellValue('NISN'),
-        TextCellValue('Mapel'),
-        TextCellValue('Ulangan Harian'),
-        TextCellValue('PTS/UTS'),
-        TextCellValue('PAS/UAS'),
+        TextCellValue('Mata Pelajaran'),
+        TextCellValue('Rata2 Harian/Tugas'),
+        TextCellValue('Praktek'),
+        TextCellValue('PTS'),
+        TextCellValue('PAS'),
         TextCellValue('Nilai Akhir'),
-      ]);
+        TextCellValue('Mutu'),
+      ];
+      sheetObject.appendRow(headerRow);
+      
+      // Menerapkan styling ke row header (asumsi index row 2)
+      for (int i = 0; i < headerRow.length; i++) {
+        var cell = sheetObject.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 2));
+        cell.cellStyle = headerStyle;
+      }
 
       rekapData.values.forEach((n) {
+        double harian = n['harian'];
         double tugas = n['tugas'];
-        double uts = n['uts'];
-        double uas = n['uas'];
-        double akhir = (tugas * 0.3) + (uts * 0.3) + (uas * 0.4);
+        double rataHarian = (harian + tugas) / (harian > 0 && tugas > 0 ? 2 : 1); 
+        if (harian == 0 && tugas == 0) rataHarian = 0;
+
+        double praktek = n['praktek'];
+        double pts = n['pts'];
+        double pas = n['pas'];
+        
+        // Rumus sederhana (Bisa disesuaikan): 30% Harian, 20% Praktek, 20% PTS, 30% PAS
+        double akhir = (rataHarian * 0.3) + (praktek * 0.2) + (pts * 0.2) + (pas * 0.3);
+
+        String mutu = 'D';
+        if (akhir >= 90) mutu = 'A';
+        else if (akhir >= 80) mutu = 'B';
+        else if (akhir >= 70) mutu = 'C';
 
         sheetObject.appendRow([
           TextCellValue(n['nama']),
           TextCellValue(n['nisn']),
           TextCellValue(n['mapel']),
-          DoubleCellValue(tugas),
-          DoubleCellValue(uts),
-          DoubleCellValue(uas),
+          DoubleCellValue(double.parse(rataHarian.toStringAsFixed(1))),
+          DoubleCellValue(praktek),
+          DoubleCellValue(pts),
+          DoubleCellValue(pas),
           DoubleCellValue(double.parse(akhir.toStringAsFixed(1))),
+          TextCellValue(mutu),
         ]);
       });
 
@@ -182,7 +221,6 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
         ..createSync(recursive: true)
         ..writeAsBytesSync(excel.encode()!);
 
-      // 🔥 KODINGAN BARU UNTUK MEMUNCULKAN POP-UP SHARE KE WA/EMAIL
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Berhasil dibuat! Membuka opsi bagikan...'),
@@ -202,7 +240,6 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Fitur Filter & Pencarian
     List<Map<String, dynamic>> filteredSiswa = _listSiswa.where((u) {
       if (_searchQuery.isEmpty) return true;
       final nama = (u['full_name'] ?? '').toString().toLowerCase();
@@ -356,12 +393,13 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                             ),
-                            // 🔥 TERHUBUNG LANGSUNG KE LAYAR E-RAPOR PDF K13 / MERDEKA (PERSIS SEPERTI SISWA)
                             onPressed: () => Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (context) => NilaiRaporScreen(
                                   siswaId: siswa['id'].toString(),
+                                  // 🔥 JIKA ANDA INGIN MENGIRIM DATA BIODATA SISWA KE RAPOR
+                                  // pastikan NilaiRaporScreen menerima parameter tersebut jika diperlukan.
                                 ),
                               ),
                             ),

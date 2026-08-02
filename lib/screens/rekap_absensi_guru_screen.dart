@@ -1,7 +1,19 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
-import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
+import '../services/popup_service.dart';
+import '../login_screen.dart';
+import 'rekap_nilai_admin_screen.dart';
+import 'tambah_user_screen.dart';
+import 'manajemen_user_screen.dart';
+import 'seeder_database_screen.dart';
+import 'manajemen_jadwal_screen.dart';
+import 'nilai_rapor_screen.dart'; 
 
 class RekapAbsensiGuruScreen extends StatefulWidget {
   const RekapAbsensiGuruScreen({super.key});
@@ -18,6 +30,12 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
   List<Map<String, dynamic>> _dataAbsen = [];
   DateTime _selectedDate = DateTime.now();
   String _namaGuruLogin = '';
+
+  // 🔥 FILTER REVISI DOSEN UNTUK TAB 1 (AKSI CEPAT)
+  String _selectedKelasTab1 = 'Semua Kelas';
+  String _selectedMapelTab1 = 'Semua Mapel';
+  List<String> _listKelasTab1 = ['Semua Kelas'];
+  List<String> _listMapelTab1 = ['Semua Mapel'];
 
   // Data untuk Tab 2: Rekap Akumulasi
   List<Map<String, dynamic>> _listRekapSiswa = [];
@@ -50,6 +68,17 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
           .or('guru_pengampu.ilike.%$_namaGuruLogin%,mapel.eq.Pulang Sekolah')
           .order('waktu_absen', ascending: false);
 
+      // Mengumpulkan daftar Kelas dan Mapel yang aktif HARI INI
+      Set<String> setK1 = {'Semua Kelas'};
+      Set<String> setM1 = {'Semua Mapel'};
+      for (var a in res) {
+        final p = a['profiles'] ?? {};
+        final k = (p['kelas'] ?? '').toString().trim();
+        final m = (a['mapel'] ?? '').toString().trim();
+        if (k.isNotEmpty) setK1.add(k);
+        if (m.isNotEmpty) setM1.add(m);
+      }
+
       // 2. Tarik daftar Siswa & Rekap Keseluruhan (Untuk Tab 2 - Rekap Akumulasi)
       final resSiswa = await _supabase
           .from('profiles')
@@ -61,7 +90,7 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
           .from('absensi')
           .select('siswa_id, status');
 
-      // Bangun daftar kelas unik untuk dropdown filter
+      // Bangun daftar kelas unik untuk dropdown filter Tab 2
       Set<String> setKelas = {'Semua Kelas'};
       for (var s in resSiswa) {
         if (s['kelas'] != null && s['kelas'].toString().trim().isNotEmpty) {
@@ -109,6 +138,15 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
           _dataAbsen = List<Map<String, dynamic>>.from(res); 
           _listRekapSiswa = rekapList;
           _daftarKelas = setKelas.toList();
+          
+          // Set dropdown list Tab 1
+          _listKelasTab1 = setK1.toList()..sort((a,b) => a == 'Semua Kelas' ? -1 : a.compareTo(b));
+          _listMapelTab1 = setM1.toList()..sort((a,b) => a == 'Semua Mapel' ? -1 : a.compareTo(b));
+          
+          // Reset pilihan jika tidak ada di list
+          if (!_listKelasTab1.contains(_selectedKelasTab1)) _selectedKelasTab1 = 'Semua Kelas';
+          if (!_listMapelTab1.contains(_selectedMapelTab1)) _selectedMapelTab1 = 'Semua Mapel';
+
           _isLoading = false; 
         });
       }
@@ -179,169 +217,6 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
     );
   }
 
-  // =========================================================================
-  // 🔥 DIALOG VERIFIKASI GURU (MAKER-CHECKER WORKFLOW + LOKASI GPS)
-  // =========================================================================
-  void _bukaDialogVerifikasiGuru(Map<String, dynamic> a) {
-    final p = a['profiles'] ?? {};
-    final String namaMurid = p['full_name'] ?? 'Siswa';
-    final String nisn = p['nisn'] ?? '-';
-    final String kelas = p['kelas'] ?? '-';
-    final String verifikasi = a['status_verifikasi'] ?? 'Pending';
-    final String fotoUrl = a['foto_url'] ?? '';
-    final String keterangan = a['keterangan'] ?? '-';
-    final String jamAbsen = a['waktu_absen'] ?? '-';
-    final double? lat = a['lat'] as double?;
-    final double? lng = a['lng'] as double?;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(
-              verifikasi == 'Pending' ? Icons.pending_actions_rounded : Icons.verified_user_rounded,
-              color: verifikasi == 'Pending' ? Colors.orange : Colors.green,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Verifikasi: $namaMurid',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (fotoUrl.isNotEmpty) ...[
-                GestureDetector(
-                  onTap: () => _tampilkanDetailFoto(context, fotoUrl, namaMurid),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Stack(
-                      alignment: Alignment.bottomRight,
-                      children: [
-                        Image.network(
-                          fotoUrl,
-                          height: 220,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Container(
-                            height: 150, color: Colors.grey.shade200,
-                            child: const Center(child: Icon(Icons.broken_image, color: Colors.red)),
-                          ),
-                        ),
-                        Container(
-                          margin: const EdgeInsets.all(8),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [Icon(Icons.zoom_in, color: Colors.white, size: 14), SizedBox(width: 4), Text('Perbesar', style: TextStyle(color: Colors.white, fontSize: 10))],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-              ],
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('📚 Kelas: $kelas | NISN: $nisn', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blue.shade900)),
-                    const Divider(),
-                    Text('⏰ Jam Scan: $jamAbsen WIB', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
-                    const SizedBox(height: 6),
-                    const Text('📍 Keterangan & Lokasi GPS:', style: TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 2),
-                    Text(keterangan, style: const TextStyle(fontSize: 12, color: Colors.black87, fontWeight: FontWeight.w500, height: 1.3)),
-                    
-                    if (lat != null && lng != null) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.blue.shade100)),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.gps_fixed, size: 12, color: Colors.blue),
-                            const SizedBox(width: 4),
-                            Text('Lat: $lat | Lng: $lng', style: const TextStyle(fontSize: 10, color: Colors.black87, fontStyle: FontStyle.italic)),
-                          ],
-                        ),
-                      ),
-                    ]
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Status Otorisasi:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: verifikasi == 'Pending' ? Colors.orange.shade100 : Colors.green.shade100,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      verifikasi.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: verifikasi == 'Pending' ? Colors.orange.shade800 : Colors.green.shade800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx), 
-            child: const Text('Tutup', style: TextStyle(color: Colors.grey))
-          ),
-          if (a['status'] != 'A')
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: const BorderSide(color: Colors.red)),
-              onPressed: () async {
-                Navigator.pop(ctx);
-                await _updateStatusAbsen(a['id'], 'A', 'Ditolak');
-              },
-              icon: const Icon(Icons.cancel, size: 16),
-              label: const Text('Tolak (Alfa)'),
-            ),
-          if (verifikasi == 'Pending')
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-              onPressed: () async {
-                Navigator.pop(ctx);
-                await _updateStatusAbsen(a['id'], a['status'], 'Disetujui');
-              },
-              icon: const Icon(Icons.check_circle, size: 16),
-              label: const Text('SETUJUI (SAH)', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     // Filter untuk Tab 2 (Rekap Akumulasi)
@@ -358,7 +233,6 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
           backgroundColor: const Color(0xFF1E40AF),
           elevation: 0.5,
           iconTheme: const IconThemeData(color: Colors.white),
-          // 🔥 REVISI PAK HALIM: KONSOLIDASI MENJADI 2 TAB TERPADU
           bottom: const TabBar(
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
@@ -383,11 +257,33 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
   }
 
   // =========================================================================
-  // WIDGET TAB 1: AKSI CEPAT & VERIFIKASI HARIAN
+  // WIDGET TAB 1 (REVISI DOSEN: FILTER & GROUPING KELAS + MAPEL)
   // =========================================================================
   Widget _buildTabAksiCepatHarian() {
+    // 1. Filter Data Berdasarkan Dropdown
+    final filteredTab1 = _dataAbsen.where((a) {
+      final k = (a['profiles']?['kelas'] ?? '').toString().trim();
+      final m = (a['mapel'] ?? '').toString().trim();
+      bool matchK = _selectedKelasTab1 == 'Semua Kelas' || k == _selectedKelasTab1;
+      bool matchM = _selectedMapelTab1 == 'Semua Mapel' || m == _selectedMapelTab1;
+      return matchK && matchM;
+    }).toList();
+
+    // 2. Grouping Data yang Sudah Difilter Berdasarkan (Kelas | Mapel)
+    Map<String, List<Map<String, dynamic>>> groupedData = {};
+    for (var a in filteredTab1) {
+      final k = (a['profiles']?['kelas'] ?? 'Tanpa Kelas').toString().trim();
+      final m = (a['mapel'] ?? 'Tanpa Mapel').toString().trim();
+      final key = '$k|$m'; // Kunci grup gabungan
+      if (!groupedData.containsKey(key)) groupedData[key] = [];
+      groupedData[key]!.add(a);
+    }
+
+    final sortedKeys = groupedData.keys.toList()..sort();
+
     return Column(
       children: [
+        // HEADER: TANGGAL
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           color: Colors.white,
@@ -417,115 +313,188 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
             ],
           ),
         ),
-        const Divider(height: 1),
+        
+        // FILTER DROPDOWN REVISI DOSEN
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          color: Colors.white,
+          child: Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _selectedKelasTab1,
+                  decoration: InputDecoration(
+                    labelText: 'Filter Kelas',
+                    labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    isDense: true, contentPadding: const EdgeInsets.all(10)
+                  ),
+                  items: _listKelasTab1.map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 12)))).toList(),
+                  onChanged: (v) => setState(() => _selectedKelasTab1 = v!),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _selectedMapelTab1,
+                  decoration: InputDecoration(
+                    labelText: 'Filter Mapel',
+                    labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    isDense: true, contentPadding: const EdgeInsets.all(10)
+                  ),
+                  items: _listMapelTab1.map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))).toList(),
+                  onChanged: (v) => setState(() => _selectedMapelTab1 = v!),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1, thickness: 1),
+
+        // DAFTAR ABSENSI YANG SUDAH DIGRUPKAN PER KELAS & MAPEL
         Expanded(
-          child: _dataAbsen.isEmpty
-              ? const Center(child: Text('Tidak ada data absensi mengajar Anda di tanggal ini.', style: TextStyle(color: Colors.grey)))
+          child: groupedData.isEmpty
+              ? const Center(child: Text('Tidak ada data absensi mengajar pada filter ini.', style: TextStyle(color: Colors.grey)))
               : ListView.builder(
-                  padding: const EdgeInsets.all(16), itemCount: _dataAbsen.length,
+                  padding: const EdgeInsets.all(16), 
+                  itemCount: sortedKeys.length,
                   itemBuilder: (context, index) {
-                    final a = _dataAbsen[index];
-                    final p = a['profiles'] ?? {};
-                    final String? fotoUrl = a['foto_url'];
-                    final String namaMurid = p['full_name'] ?? 'Nama Tidak Dikenal';
-                    final String verifikasi = a['status_verifikasi'] ?? 'Pending';
-                    final String jamAbsen = a['waktu_absen'] ?? '-'; 
-                    final double? lat = a['lat'] as double?;
-                    final double? lng = a['lng'] as double?;
-                    
-                    String statusText = 'Hadir'; Color warnaStatus = Colors.green; String kodeTampil = a['status'] ?? 'H';
-                    if (a['status'] == 'I') { statusText = 'Izin / Sakit'; warnaStatus = Colors.orange; } else if (a['status'] == 'A') { statusText = 'Alfa'; warnaStatus = Colors.red; } else if (a['status'] == 'T') { statusText = 'Terlambat'; warnaStatus = Colors.amber.shade700; }
+                    final key = sortedKeys[index];
+                    final kelasGroup = key.split('|')[0];
+                    final mapelGroup = key.split('|')[1];
+                    final listSiswa = groupedData[key]!;
 
                     return Card(
                       elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16), 
-                        side: BorderSide(color: verifikasi == 'Pending' ? Colors.orange : Colors.grey.shade300, width: verifikasi == 'Pending' ? 1.5 : 1.0)
-                      ),
-                      margin: const EdgeInsets.only(bottom: 12),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
-                        onTap: () => _bukaDialogVerifikasiGuru(a),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  CircleAvatar(radius: 22, backgroundColor: warnaStatus.withOpacity(0.15), child: Text(kodeTampil, style: TextStyle(color: warnaStatus, fontWeight: FontWeight.bold, fontSize: 18))),
-                                  const SizedBox(width: 16),
-                                  Expanded(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.blue.shade200, width: 1.5)),
+                      child: ExpansionTile(
+                        initiallyExpanded: true,
+                        backgroundColor: Colors.white,
+                        collapsedBackgroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        leading: CircleAvatar(backgroundColor: Colors.blue.shade100, child: const Icon(Icons.class_, color: Color(0xFF1E40AF))),
+                        title: Text('Kelas $kelasGroup', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A), fontSize: 16)),
+                        subtitle: Text('📚 Mapel: $mapelGroup  •  👥 ${listSiswa.length} Siswa', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.blue.shade800, fontSize: 12)),
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16))),
+                            child: Column(
+                              children: listSiswa.map((a) {
+                                final p = a['profiles'] ?? {};
+                                final String? fotoUrl = a['foto_url'];
+                                final String namaMurid = p['full_name'] ?? 'Nama Tidak Dikenal';
+                                final String verifikasi = a['status_verifikasi'] ?? 'Pending';
+                                final String jamAbsen = a['waktu_absen'] ?? '-'; 
+                                
+                                // SAFE PARSING UNTUK LAT/LNG DI LIST AGAR TIDAK SILENT CRASH
+                                double? lat;
+                                if (a['lat'] != null) lat = double.tryParse(a['lat'].toString());
+                                double? lng;
+                                if (a['lng'] != null) lng = double.tryParse(a['lng'].toString());
+
+                                final String namaLokasi = (a['lokasi'] ?? a['nama_lokasi'] ?? '').toString();
+                                final String jarak = (a['jarak'] ?? '').toString();
+                                String infoLokasi = namaLokasi.isNotEmpty ? '📍 Area: $namaLokasi ${jarak.isNotEmpty ? "($jarak m)" : ""}\n' : '';
+                                
+                                String statusText = 'Hadir'; Color warnaStatus = Colors.green; String kodeTampil = a['status'] ?? 'H';
+                                if (a['status'] == 'I') { statusText = 'Izin / Sakit'; warnaStatus = Colors.orange; } else if (a['status'] == 'A') { statusText = 'Alfa'; warnaStatus = Colors.red; } else if (a['status'] == 'T') { statusText = 'Terlambat'; warnaStatus = Colors.amber.shade700; }
+
+                                return Card(
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12), 
+                                    side: BorderSide(color: verifikasi == 'Pending' ? Colors.orange : Colors.grey.shade300, width: verifikasi == 'Pending' ? 1.5 : 1.0)
+                                  ),
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  // HAPUS INKWELL ONTAP DETAIL DI SINI
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(14),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(namaMurid, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)), Text('NISN: ${p['nisn'] ?? '-'} | Kelas: ${p['kelas'] ?? '-'}', style: const TextStyle(fontSize: 11, color: Colors.grey))])),
-                                            const SizedBox(width: 8),
-                                            if (a['status'] == 'I') Container(width: 50, height: 50, decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.edit_document, color: Colors.orange))
-                                            else if (fotoUrl != null && fotoUrl.isNotEmpty) GestureDetector(onTap: () => _tampilkanDetailFoto(context, fotoUrl, namaMurid), child: MouseRegion(cursor: SystemMouseCursors.click, child: Tooltip(message: 'Klik untuk perbesar', child: ClipRRect(borderRadius: BorderRadius.circular(8), child: Container(decoration: BoxDecoration(border: Border.all(color: Colors.blue.shade200, width: 1.5), borderRadius: BorderRadius.circular(8)), child: Image.network(fotoUrl, width: 50, height: 50, fit: BoxFit.cover, loadingBuilder: (context, child, loadingProgress) { if (loadingProgress == null) return child; return const SizedBox(width: 50, height: 50, child: Center(child: CircularProgressIndicator(strokeWidth: 2))); }, errorBuilder: (context, error, stackTrace) => Container(width: 50, height: 50, color: Colors.red.shade50, child: const Icon(Icons.broken_image, color: Colors.red, size: 20))))))))
-                                            else Container(width: 50, height: 50, decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.person, color: Colors.grey)),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text('📚 Mapel: ${a['mapel'] ?? '-'}', style: const TextStyle(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.w600)),
-                                        const SizedBox(height: 2),
-                                        Row(
-                                          children: [
-                                            Text('⏰ Jam Absen: $jamAbsen', style: const TextStyle(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.bold)),
-                                            const Spacer(),
-                                            if (lat != null && lng != null)
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
-                                                child: const Row(
-                                                  children: [Icon(Icons.location_on, size: 10, color: Colors.blue), SizedBox(width: 2), Text('GPS Valid', style: TextStyle(fontSize: 9, color: Colors.blue, fontWeight: FontWeight.bold))],
-                                                ),
+                                            CircleAvatar(radius: 20, backgroundColor: warnaStatus.withOpacity(0.15), child: Text(kodeTampil, style: TextStyle(color: warnaStatus, fontWeight: FontWeight.bold, fontSize: 16))),
+                                            const SizedBox(width: 14),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(namaMurid, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)), Text('NISN: ${p['nisn'] ?? '-'}', style: const TextStyle(fontSize: 11, color: Colors.grey))])),
+                                                      const SizedBox(width: 8),
+                                                      if (a['status'] == 'I') Container(width: 45, height: 45, decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.edit_document, color: Colors.orange, size: 20))
+                                                      else if (fotoUrl != null && fotoUrl.isNotEmpty) GestureDetector(onTap: () => _tampilkanDetailFoto(context, fotoUrl, namaMurid), child: MouseRegion(cursor: SystemMouseCursors.click, child: Tooltip(message: 'Klik untuk perbesar', child: ClipRRect(borderRadius: BorderRadius.circular(8), child: Container(decoration: BoxDecoration(border: Border.all(color: Colors.blue.shade200, width: 1.5), borderRadius: BorderRadius.circular(8)), child: Image.network(fotoUrl, width: 45, height: 45, fit: BoxFit.cover, loadingBuilder: (context, child, loadingProgress) { if (loadingProgress == null) return child; return const SizedBox(width: 45, height: 45, child: Center(child: CircularProgressIndicator(strokeWidth: 2))); }, errorBuilder: (context, error, stackTrace) => Container(width: 45, height: 45, color: Colors.red.shade50, child: const Icon(Icons.broken_image, color: Colors.red, size: 20))))))))
+                                                      else Container(width: 45, height: 45, decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.person, color: Colors.grey, size: 20)),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                  Row(
+                                                    children: [
+                                                      Text('⏰ $jamAbsen', style: const TextStyle(fontSize: 11, color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+                                                      const Spacer(),
+                                                      if (lat != null && lng != null)
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                          decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
+                                                          child: Row(
+                                                            children: [const Icon(Icons.location_on, size: 10, color: Colors.blue), const SizedBox(width: 2), Text('$lat, $lng', style: const TextStyle(fontSize: 9, color: Colors.blue, fontWeight: FontWeight.bold))],
+                                                          ),
+                                                        ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                  Container(
+                                                    width: double.infinity, padding: const EdgeInsets.all(8), 
+                                                    decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(6)), 
+                                                    child: Text('📌 Verifikasi: $verifikasi\n$infoLokasi📝 Ket: ${a['keterangan']}', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.black87, height: 1.4))
+                                                  ),
+                                                ],
                                               ),
+                                            ),
                                           ],
                                         ),
-                                        const SizedBox(height: 6),
-                                        Container(
-                                          width: double.infinity, padding: const EdgeInsets.all(10), 
-                                          decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)), 
-                                          child: Text('📌 Verifikasi: $verifikasi\n📝 Keterangan: ${a['keterangan']}', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.black87, height: 1.4))
-                                        ),
+                                        
+                                        // 🔥 TOMBOL AKSI DIBUAT LEBIH RAPI & BESAR TANPA TOMBOL DETAIL
+                                        if (verifikasi == 'Pending' || a['status'] != 'A') ...[
+                                          const Divider(height: 24),
+                                          Row(
+                                            children: [
+                                              if (verifikasi == 'Pending') 
+                                                Expanded(
+                                                  child: ElevatedButton.icon(
+                                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600, foregroundColor: Colors.white, textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold), padding: const EdgeInsets.symmetric(vertical: 10)), 
+                                                    onPressed: () => _updateStatusAbsen(a['id'], a['status'], 'Disetujui'), 
+                                                    icon: const Icon(Icons.check_circle, size: 16), 
+                                                    label: Text(a['status'] == 'I' ? 'ACC IZIN' : 'ACC SAH')
+                                                  ),
+                                                ),
+                                              if (verifikasi == 'Pending' && a['status'] != 'A') const SizedBox(width: 10),
+                                              if (a['status'] != 'A') 
+                                                Expanded(
+                                                  child: OutlinedButton.icon(
+                                                    style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: const BorderSide(color: Colors.red), textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold), padding: const EdgeInsets.symmetric(vertical: 10)), 
+                                                    onPressed: () => _updateStatusAbsen(a['id'], 'A', 'Ditolak'), 
+                                                    icon: const Icon(Icons.cancel, size: 16), 
+                                                    label: const Text('ALFA / TOLAK')
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ]
                                       ],
                                     ),
                                   ),
-                                ],
-                              ),
-                              const Divider(height: 24),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  if (verifikasi == 'Pending') 
-                                    ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600, foregroundColor: Colors.white, textStyle: const TextStyle(fontSize: 12)), 
-                                      onPressed: () => _updateStatusAbsen(a['id'], a['status'], 'Disetujui'), 
-                                      icon: const Icon(Icons.check_circle, size: 16), 
-                                      label: Text(a['status'] == 'I' ? 'ACC IZIN' : 'ACC SAH')
-                                    ),
-                                  if (a['status'] != 'A') 
-                                    ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600, foregroundColor: Colors.white, textStyle: const TextStyle(fontSize: 12)), 
-                                      onPressed: () => _updateStatusAbsen(a['id'], 'A', 'Ditolak'), 
-                                      icon: const Icon(Icons.cancel, size: 16), 
-                                      label: const Text('TOLAK / ALFA')
-                                    ),
-                                  OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(foregroundColor: Colors.blue.shade800, side: BorderSide(color: Colors.blue.shade800), textStyle: const TextStyle(fontSize: 12)),
-                                    onPressed: () => _bukaDialogVerifikasiGuru(a),
-                                    icon: const Icon(Icons.manage_search_rounded, size: 16),
-                                    label: const Text('Periksa Detail'),
-                                  )
-                                ],
-                              )
-                            ],
-                          ),
-                        ),
+                                );
+                              }).toList(),
+                            ),
+                          )
+                        ],
                       ),
                     );
                   },
