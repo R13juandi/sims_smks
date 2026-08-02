@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
+import '../services/popup_service.dart'; 
 
 class ManajemenJadwalScreen extends StatefulWidget {
   const ManajemenJadwalScreen({super.key});
@@ -14,7 +14,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   List<dynamic> _jadwalList = [];
   List<String> _guruList = [];
   bool _isLoading = true;
-  String _currentUserRole = 'admin'; // 🔥 Menyimpan role pengguna
+  String _currentUserRole = 'admin'; 
 
   final List<String> _kelasList = ['X TKJ', 'XI TKJ', 'XII TKJ']; 
   final List<String> _hariList = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -23,21 +23,16 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchUserRole(); // 🔥 Panggil fungsi ambil role
+    _fetchUserRole(); 
     _fetchGurus();
     _fetchJadwal();
   }
 
-  // 🔥 Fungsi untuk mengambil role pengguna yang login
   Future<void> _fetchUserRole() async {
     try {
       final userAuth = _supabase.auth.currentUser;
       if (userAuth != null) {
-        final profileRes = await _supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', userAuth.id)
-            .maybeSingle();
+        final profileRes = await _supabase.from('profiles').select('role').eq('id', userAuth.id).maybeSingle();
         if (mounted) {
           setState(() {
             _currentUserRole = profileRes?['role']?.toString().toLowerCase().trim() ?? 'admin';
@@ -90,7 +85,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   }
 
   void _showFormDialog({Map<String, dynamic>? jadwal}) {
-    if (_currentUserRole.contains('kepsek')) return; // 🔥 Cegah kepsek buka form
+    if (_currentUserRole.contains('kepsek')) return; 
 
     final isEdit = jadwal != null;
 
@@ -101,7 +96,10 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     
     final ruangController = TextEditingController(text: isEdit ? (jadwal['ruang_kelas'] ?? 'Lt. 2 - R. 05') : 'Lt. 2 - R. 05');
     String selectedSemester = isEdit ? (jadwal['semester'] ?? 'Ganjil') : 'Ganjil';
-    final tahunController = TextEditingController(text: isEdit ? (jadwal['tahun_ajaran'] ?? '2025/2026') : '2025/2026');
+    
+    DateTime now = DateTime.now();
+    int year = now.month >= 7 ? now.year : now.year - 1;
+    final tahunController = TextEditingController(text: isEdit ? (jadwal['tahun_ajaran'] ?? '$year/${year+1}') : '$year/${year+1}');
 
     bool isIstirahat = isEdit && (selectedMapel?.toLowerCase().contains('istirahat') ?? false) || (selectedMapel?.toLowerCase().contains('ishoma') ?? false);
     String typeIstirahat = isIstirahat ? (selectedMapel ?? 'Istirahat 1') : 'Istirahat 1';
@@ -244,7 +242,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   }
 
   void _hapusJadwal(dynamic id) {
-    if (_currentUserRole.contains('kepsek')) return; // 🔥 Cegah kepsek menghapus
+    if (_currentUserRole.contains('kepsek')) return; 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -311,7 +309,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           title: Text(mapel, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isIstirahat ? Colors.orange.shade900 : Colors.black)),
                           subtitle: isIstirahat ? Text('$jamMulai - $jamSelesai WIB', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.w600, fontSize: 12)) : Padding(padding: const EdgeInsets.only(top: 4), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Guru: ${jadwal['guru_pengampu']} | Ruang: $ruang', style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('Waktu: $jamMulai - $jamSelesai WIB (${jadwal['semester'] ?? "Ganjil"})', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w600))])),
-                          // 🔥 SEMBUNYIKAN TOMBOL EDIT & HAPUS JIKA KEPSEK
                           trailing: isKepsek 
                               ? null 
                               : Row(mainAxisSize: MainAxisSize.min, children: [
@@ -327,7 +324,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
             );
           },
         ),
-      // 🔥 SEMBUNYIKAN FLOATING ACTION BUTTON JIKA KEPSEK
       floatingActionButton: isKepsek
           ? null
           : FloatingActionButton.extended(
