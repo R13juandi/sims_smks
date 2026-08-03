@@ -53,7 +53,7 @@ class _GuruDashboardState extends State<GuruDashboard> {
 
       final namaGuru = _biodataGuru['full_name']?.toString().trim() ?? '';
 
-      // 🔥 FUZZY MATCHING: Tarik SEMUA jadwal, filter secara fleksibel
+      // 🔥 FUZZY MATCHING: Tarik SEMUA jadwal, filter secara fleksibel per kata
       final semuaJadwalDb = await _supabase.from('jadwal').select('*');
       
       List<String> nameParts = namaGuru.toLowerCase()
@@ -104,6 +104,7 @@ class _GuruDashboardState extends State<GuruDashboard> {
         });
       }
       
+      // 🔥 ABSENSI PENDING: Filter kuat dengan membandingkan semua format nama
       final tanggalSekarang = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final pendingRes = await _supabase
           .from('absensi')

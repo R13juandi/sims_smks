@@ -11,14 +11,21 @@ class ManajemenJadwalScreen extends StatefulWidget {
 
 class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   final _supabase = Supabase.instance.client;
+  
   List<dynamic> _jadwalList = [];
+  List<dynamic> _jadwalTerpilih = []; // 🔥 Jadwal yang sudah difilter
   List<String> _guruList = [];
+  
   bool _isLoading = true;
   String _currentUserRole = 'admin'; 
 
   final List<String> _kelasList = ['X TKJ', 'XI TKJ', 'XII TKJ']; 
   final List<String> _hariList = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
   Map<String, List<String>> _dynamicGuruMapel = {};
+
+  // 🔥 VARIABEL UNTUK FILTER HISTORI
+  String _selectedPeriode = '';
+  List<String> _daftarPeriodeHistori = [];
 
   @override
   void initState() {
@@ -76,14 +83,91 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     setState(() => _isLoading = true);
     try {
       final data = await _supabase.from('jadwal').select().order('jam_mulai', ascending: true);
-      if (mounted) setState(() => _jadwalList = data);
+      if (mounted) {
+        _jadwalList = data;
+        _extractPeriodeDariData(); // 🔥 Panggil ekstraksi periode
+      }
     } catch (e) {
-      if (mounted) PopupService.show(context, 'Gagal memuat jadwal', isSuccess: false, judul: 'Gagal');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        PopupService.show(context, 'Gagal memuat jadwal', isSuccess: false, judul: 'Gagal');
+        setState(() => _isLoading = false);
+      }
     }
   }
 
+  // =========================================================================
+  // 🔥 FUNGSI EKSTRAK PERIODE (SEMESTER & TAHUN AJARAN)
+  // =========================================================================
+  void _extractPeriodeDariData() {
+    Set<String> periods = {};
+    
+    DateTime now = DateTime.now();
+    int currentStartYear = now.month >= 7 ? now.year : now.year - 1;
+    String currentTa = "$currentStartYear/${currentStartYear + 1}";
+    String currentSmtStr = now.month >= 7 ? "Ganjil" : "Genap";
+    String activeKey = "$currentSmtStr $currentTa";
+
+    for (var j in _jadwalList) {
+      String dbSemester = (j['semester'] ?? '').toString().trim();
+      String dbTahun = (j['tahun_ajaran'] ?? '').toString().trim();
+      
+      if (dbSemester.isNotEmpty && dbTahun.isNotEmpty) {
+         String smtCap = dbSemester.toLowerCase().contains('ganjil') ? 'Ganjil' : 'Genap';
+         String key = "$smtCap $dbTahun";
+         
+         if (key == activeKey) {
+           periods.add('Semester $key (Aktif)');
+         } else {
+           periods.add('Semester $key (Histori)');
+         }
+      }
+    }
+    
+    List<String> finalPeriods = periods.toList();
+    
+    finalPeriods.sort((a, b) {
+      return b.compareTo(a);
+    });
+
+    if (finalPeriods.isEmpty) {
+      finalPeriods.add('Semester $activeKey (Aktif)');
+    } else if (!finalPeriods.any((p) => p.contains('(Aktif)'))) {
+      finalPeriods.insert(0, 'Semester $activeKey (Aktif)');
+    }
+
+    setState(() {
+      _daftarPeriodeHistori = finalPeriods;
+      // Otomatis memilih Semester Aktif sebagai default
+      _selectedPeriode = finalPeriods.firstWhere((p) => p.contains('(Aktif)'), orElse: () => finalPeriods.first);
+    });
+
+    _filterJadwalLokal(_selectedPeriode);
+  }
+
+  void _filterJadwalLokal(String periode) {
+    String smtKeyword = periode.toLowerCase().contains('ganjil') ? 'ganjil' : 'genap';
+    RegExp regExp = RegExp(r'\d{4}/\d{4}');
+    String tahunKeyword = regExp.stringMatch(periode) ?? '';
+
+    List<dynamic> hasil = _jadwalList.where((j) {
+      String dbSemester = (j['semester'] ?? '').toString().toLowerCase();
+      String dbTahun = (j['tahun_ajaran'] ?? '').toString().toLowerCase();
+      
+      bool matchSmt = dbSemester.contains(smtKeyword);
+      bool matchTahun = tahunKeyword.isNotEmpty ? dbTahun.contains(tahunKeyword) : true;
+      
+      return matchSmt && matchTahun;
+    }).toList();
+
+    setState(() {
+      _jadwalTerpilih = hasil;
+      _isLoading = false;
+    });
+  }
+
+  // =========================================================================
+  // FUNGSI DIALOG & HAPUS
+  // =========================================================================
   void _showFormDialog({Map<String, dynamic>? jadwal}) {
     if (_currentUserRole.contains('kepsek')) return; 
 
@@ -275,55 +359,109 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(title: const Text('Manajemen Jadwal Real-Time', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)), backgroundColor: Colors.white, elevation: 1, iconTheme: const IconThemeData(color: Colors.black)),
-      body: _isLoading ? const Center(child: CircularProgressIndicator()) 
-      : ListView.builder(
-          padding: const EdgeInsets.all(16), itemCount: _kelasList.length,
-          itemBuilder: (context, index) {
-            String kelasTujuan = _kelasList[index];
-            List<dynamic> jadwalKelasIni = _jadwalList.where((j) => j['kelas'] == kelasTujuan).toList();
-            if (jadwalKelasIni.isEmpty) return const SizedBox.shrink();
-
-            return Card(
-              elevation: 2, margin: const EdgeInsets.only(bottom: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: ExpansionTile(
-                title: Text(kelasTujuan, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue.shade900)),
-                leading: Icon(Icons.folder_shared_rounded, color: Colors.blue.shade700, size: 32),
-                children: _hariList.map((hariTujuan) {
-                  List<dynamic> jadwalHariIni = jadwalKelasIni.where((j) => j['hari'] == hariTujuan).toList();
-                  if (jadwalHariIni.isEmpty) return const SizedBox.shrink();
-
-                  return ExpansionTile(
-                    title: Text(hariTujuan, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)), leading: const Icon(Icons.calendar_today_rounded, color: Colors.orange), backgroundColor: Colors.grey.shade50,
-                    children: jadwalHariIni.map((jadwal) {
-                      final jamMulai = jadwal['jam_mulai'] != null && jadwal['jam_mulai'].toString().length >= 5 ? jadwal['jam_mulai'].toString().substring(0, 5) : '00:00';
-                      final jamSelesai = jadwal['jam_selesai'] != null && jadwal['jam_selesai'].toString().length >= 5 ? jadwal['jam_selesai'].toString().substring(0, 5) : '00:00';
-                      
-                      final mapel = (jadwal['mata_pelajaran'] ?? '-').toString().toUpperCase();
-                      final ruang = (jadwal['ruang_kelas'] ?? 'R. 101').toString();
-                      bool isIstirahat = mapel.contains('ISTIRAHAT') || mapel.contains('ISHOMA');
-
-                      return Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        decoration: BoxDecoration(color: isIstirahat ? Colors.orange.shade50 : Colors.white, border: Border(left: BorderSide(color: isIstirahat ? Colors.orange : Colors.blue.shade900, width: 4)), boxShadow: [BoxShadow(color: Colors.grey.shade200, blurRadius: 2, offset: const Offset(0, 1))]),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          title: Text(mapel, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isIstirahat ? Colors.orange.shade900 : Colors.black)),
-                          subtitle: isIstirahat ? Text('$jamMulai - $jamSelesai WIB', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.w600, fontSize: 12)) : Padding(padding: const EdgeInsets.only(top: 4), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Guru: ${jadwal['guru_pengampu']} | Ruang: $ruang', style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('Waktu: $jamMulai - $jamSelesai WIB (${jadwal['semester'] ?? "Ganjil"})', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w600))])),
-                          trailing: isKepsek 
-                              ? null 
-                              : Row(mainAxisSize: MainAxisSize.min, children: [
-                                  IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _showFormDialog(jadwal: jadwal)), 
-                                  IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 20), onPressed: () => _hapusJadwal(jadwal['id']))
-                                ]),
-                        ),
-                      );
-                    }).toList(),
-                  );
-                }).toList(),
+      body: _isLoading 
+        ? const Center(child: CircularProgressIndicator()) 
+        : Column(
+            children: [
+              // 🔥 DROPDOWN FILTER HISTORI
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+                ),
+                child: DropdownButtonFormField<String>(
+                  value: _selectedPeriode,
+                  isExpanded: true,
+                  icon: const Icon(Icons.history_edu_rounded, color: Color(0xFF1E40AF)),
+                  decoration: InputDecoration(
+                    labelText: 'Pilih Periode / Histori Jadwal',
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.blue.shade100, width: 1.5)),
+                    focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)), borderSide: BorderSide(color: Color(0xFF1E40AF), width: 2)),
+                  ),
+                  items: _daftarPeriodeHistori.map((p) => DropdownMenuItem(
+                    value: p,
+                    child: Text(p, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E293B))),
+                  )).toList(),
+                  onChanged: (val) {
+                    if (val != null && val != _selectedPeriode) {
+                      setState(() => _selectedPeriode = val);
+                      _filterJadwalLokal(val);
+                    }
+                  },
+                ),
               ),
-            );
-          },
-        ),
+              
+              // 🔥 DAFTAR JADWAL HASIL FILTER
+              Expanded(
+                child: _jadwalTerpilih.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.event_busy_rounded, size: 60, color: Colors.grey.shade400),
+                            const SizedBox(height: 16),
+                            Text('Belum ada jadwal / riwayat\npada \n$_selectedPeriode.', textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, fontSize: 14, height: 1.5)),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16), 
+                        itemCount: _kelasList.length,
+                        itemBuilder: (context, index) {
+                          String kelasTujuan = _kelasList[index];
+                          List<dynamic> jadwalKelasIni = _jadwalTerpilih.where((j) => j['kelas'] == kelasTujuan).toList();
+                          
+                          if (jadwalKelasIni.isEmpty) return const SizedBox.shrink();
+
+                          return Card(
+                            elevation: 2, margin: const EdgeInsets.only(bottom: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            child: ExpansionTile(
+                              title: Text(kelasTujuan, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue.shade900)),
+                              leading: Icon(Icons.folder_shared_rounded, color: Colors.blue.shade700, size: 32),
+                              children: _hariList.map((hariTujuan) {
+                                List<dynamic> jadwalHariIni = jadwalKelasIni.where((j) => j['hari'] == hariTujuan).toList();
+                                if (jadwalHariIni.isEmpty) return const SizedBox.shrink();
+
+                                return ExpansionTile(
+                                  title: Text(hariTujuan, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)), leading: const Icon(Icons.calendar_today_rounded, color: Colors.orange), backgroundColor: Colors.grey.shade50,
+                                  children: jadwalHariIni.map((jadwal) {
+                                    final jamMulai = jadwal['jam_mulai'] != null && jadwal['jam_mulai'].toString().length >= 5 ? jadwal['jam_mulai'].toString().substring(0, 5) : '00:00';
+                                    final jamSelesai = jadwal['jam_selesai'] != null && jadwal['jam_selesai'].toString().length >= 5 ? jadwal['jam_selesai'].toString().substring(0, 5) : '00:00';
+                                    
+                                    final mapel = (jadwal['mata_pelajaran'] ?? '-').toString().toUpperCase();
+                                    final ruang = (jadwal['ruang_kelas'] ?? 'R. 101').toString();
+                                    bool isIstirahat = mapel.contains('ISTIRAHAT') || mapel.contains('ISHOMA');
+
+                                    return Container(
+                                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                      decoration: BoxDecoration(color: isIstirahat ? Colors.orange.shade50 : Colors.white, border: Border(left: BorderSide(color: isIstirahat ? Colors.orange : Colors.blue.shade900, width: 4)), boxShadow: [BoxShadow(color: Colors.grey.shade200, blurRadius: 2, offset: const Offset(0, 1))]),
+                                      child: ListTile(
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                        title: Text(mapel, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isIstirahat ? Colors.orange.shade900 : Colors.black)),
+                                        subtitle: isIstirahat ? Text('$jamMulai - $jamSelesai WIB', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.w600, fontSize: 12)) : Padding(padding: const EdgeInsets.only(top: 4), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Guru: ${jadwal['guru_pengampu']} | Ruang: $ruang', style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('Waktu: $jamMulai - $jamSelesai WIB (${jadwal['semester'] ?? "Ganjil"})', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w600))])),
+                                        trailing: isKepsek 
+                                            ? null 
+                                            : Row(mainAxisSize: MainAxisSize.min, children: [
+                                                IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _showFormDialog(jadwal: jadwal)), 
+                                                IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 20), onPressed: () => _hapusJadwal(jadwal['id']))
+                                              ]),
+                                      ),
+                                    );
+                                  }).toList(),
+                                );
+                              }).toList(),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
       floatingActionButton: isKepsek
           ? null
           : FloatingActionButton.extended(
