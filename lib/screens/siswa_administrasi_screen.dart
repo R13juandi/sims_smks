@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
-import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import '../services/popup_service.dart';
 
 class SiswaAdministrasiScreen extends StatefulWidget {
   final String siswaId;
@@ -73,7 +76,6 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
     bool isKelas10 = RegExp(r'\b(10|x)\b').hasMatch(kelasSiswa);
     bool isSPP = jenisTagihan.contains('SPP');
     
-    // 🔥 AUTOFILL NOMINAL: Jika SPP otomatis Rp 250.000 (1 bulan), jika LKS/dll sesuai sisa tagihan
     int nominalFinal = isSPP ? 250000 : sisaTagihan;
     if (isSPP && isKelas10) {
       nominalFinal = 0; // Gratis Khusus Kelas 10
@@ -190,7 +192,6 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
                       await _supabase.storage.from('foto_absensi').upload(namaFile, File(fileBukti!.path));
                       final urlBukti = _supabase.storage.from('foto_absensi').getPublicUrl(namaFile);
 
-                      // 🔥 KETERANGAN OTOMATIS MENYEBUT BULAN YANG DIBAYAR
                       String ketFinal = isSPP ? 'SPP Bulan $selectedBulan' : jenisTagihan;
                       if (keteranganCtrl.text.trim().isNotEmpty) {
                         ketFinal += ' - ${keteranganCtrl.text.trim()}';
@@ -227,7 +228,7 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
   }
 
   // =========================================================================
-  // 🔥 REVISI PAK HALIM: DETAIL HISTORI ON-TAP (BOTTOM SHEET)
+  // 🔥 MUNCULKAN BOTTOM SHEET & TOMBOL PDF
   // =========================================================================
   void _bukaDetailHistori(String kategori, List<Map<String, dynamic>> riwayatItem, int totalDibayar, int kewajiban, int sisaKurang, bool isLunas) {
     final formatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
@@ -325,26 +326,30 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(formatter.format(nominal), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue.shade900)),
+                                      Text(formatter.format(nominal), style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900, fontSize: 14)),
+                                      // 🔥 TOMBOL CETAK PDF
+                                      if (status == 'LUNAS')
+                                        IconButton(icon: const Icon(Icons.print, color: Colors.red, size: 20), tooltip: 'Cetak Kwitansi', padding: EdgeInsets.zero, constraints: const BoxConstraints(), onPressed: () => _cetakKwitansiPDF(b)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                         decoration: BoxDecoration(color: badgeColor.withOpacity(0.15), borderRadius: BorderRadius.circular(6), border: Border.all(color: badgeColor.withOpacity(0.4))),
                                         child: Text(status, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: badgeColor)),
                                       ),
+                                      const SizedBox(width: 8),
+                                      const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
+                                      const SizedBox(width: 4),
+                                      Text(waktuTampil, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black87)),
                                     ],
                                   ),
                                   const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
-                                      const SizedBox(width: 6),
-                                      Text(waktuTampil, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87)),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
                                   Text('Keterangan: $ket', style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
                                   const SizedBox(height: 2),
-                                  Text('Verifikator TU: $penerima', style: const TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic)),
+                                  Text('Kasir/Verifikator: $penerima', style: const TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic)),
                                 ],
                               ),
                             ),
@@ -357,6 +362,147 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
         );
       },
     );
+  }
+
+  // =========================================================================
+  // 🔥 FUNGSI PDF GENERATOR (MENGGUNAKAN DATA _biodata)
+  // =========================================================================
+  Future<void> _cetakKwitansiPDF(Map<String, dynamic> dataBayar) async {
+    try {
+      final pdf = pw.Document();
+      final formatter = NumberFormat.currency(
+        locale: 'id_ID',
+        symbol: 'Rp ',
+        decimalDigits: 0,
+      );
+
+      final rawDate = (dataBayar['tanggal_bayar'] ?? dataBayar['created_at'] ?? '').toString();
+      String tglCetak = rawDate;
+      try {
+        if (rawDate.isNotEmpty) {
+          tglCetak = DateFormat('dd MMMM yyyy, HH:mm').format(DateTime.parse(rawDate).toLocal());
+        } else {
+          tglCetak = DateFormat('dd MMMM yyyy, HH:mm').format(DateTime.now());
+        }
+      } catch (_) {
+        tglCetak = DateFormat('dd MMMM yyyy, HH:mm').format(DateTime.now());
+      }
+
+      // 🔥 Menggunakan data dari state _biodata
+      final namaSiswa = (_biodata['full_name'] ?? '-').toString();
+      final kelasSiswa = (_biodata['kelas'] ?? '-').toString();
+      final nisnSiswa = (_biodata['nisn'] ?? '-').toString();
+      
+      final nominal = dataBayar['nominal'] ?? 0;
+      final jenisPembayaran = (dataBayar['jenis_pembayaran'] ?? '-').toString();
+      final bulanTagihan = (dataBayar['bulan_tagihan'] ?? '-').toString();
+      final penerima = (dataBayar['penerima'] ?? 'Menunggu Verifikasi TU').toString();
+      final statusBayar = (dataBayar['status'] ?? 'PENDING').toString().toUpperCase();
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a5.landscape,
+          margin: const pw.EdgeInsets.all(32),
+          build: (pw.Context context) {
+            return pw.Container(
+              decoration: pw.BoxDecoration(border: pw.Border.all(width: 2)),
+              padding: const pw.EdgeInsets.all(16),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Center(
+                    child: pw.Text(
+                      'BUKTI PEMBAYARAN RESMI (KWITANSI)',
+                      style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ),
+                  pw.Center(
+                    child: pw.Text(
+                      'SMK ISLAM AL AYANIAH TANGERANG',
+                      style: const pw.TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  pw.Divider(thickness: 2),
+                  pw.SizedBox(height: 10),
+                  pw.Row(
+                    children: [
+                      pw.Container(width: 120, child: pw.Text('Telah Terima Dari')),
+                      pw.Text(': $namaSiswa'),
+                    ],
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Row(
+                    children: [
+                      pw.Container(width: 120, child: pw.Text('Kelas / NISN')),
+                      pw.Text(': $kelasSiswa / $nisnSiswa'),
+                    ],
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Row(
+                    children: [
+                      pw.Container(width: 120, child: pw.Text('Uang Sejumlah')),
+                      pw.Text(
+                        ': ${formatter.format(nominal)}',
+                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Container(width: 120, child: pw.Text('Untuk Pembayaran')),
+                      pw.Expanded(
+                        child: pw.Text(': $jenisPembayaran${bulanTagihan != '-' ? ' ($bulanTagihan)' : ''}'),
+                      ),
+                    ],
+                  ),
+                  pw.Spacer(),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(8),
+                        decoration: pw.BoxDecoration(
+                          border: pw.Border.all(color: statusBayar == 'LUNAS' ? PdfColors.green : PdfColors.orange),
+                        ),
+                        child: pw.Text(
+                          'STATUS: $statusBayar',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 14,
+                            color: statusBayar == 'LUNAS' ? PdfColors.green : PdfColors.orange,
+                          ),
+                        ),
+                      ),
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.center,
+                        children: [
+                          pw.Text('Tangerang, $tglCetak', style: const pw.TextStyle(fontSize: 10)),
+                          pw.SizedBox(height: 40),
+                          pw.Text(penerima, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
+                          pw.Text('Verifikator / Staf Keuangan', style: const pw.TextStyle(fontSize: 10)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdf.save(),
+        name: 'Kwitansi_$namaSiswa',
+      );
+    } catch (e) {
+      debugPrint('Error _cetakKwitansiPDF: $e');
+      if (mounted) {
+        PopupService.show(context, 'Gagal mencetak kwitansi: $e', isSuccess: false, judul: 'Error');
+      }
+    }
   }
 
   Widget _itemSummary(String label, String value, Color color) {
@@ -376,7 +522,6 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
     String kelasSiswa = (_biodata['kelas'] ?? '').toString().toLowerCase();
     bool isKelas10 = RegExp(r'\b(10|x)\b').hasMatch(kelasSiswa);
 
-    // Mengelompokkan riwayat pembayaran siswa berdasarkan jenis tagihan
     Map<String, List<Map<String, dynamic>>> groupedBayar = {};
     for (var b in _riwayatBayar) {
       final jenis = (b['jenis_pembayaran'] ?? 'Lainnya').toString();
@@ -412,12 +557,11 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                const Text('DAFTAR KEWAJIBAN & STATUS (MASTER VIEW)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B), letterSpacing: 0.5)),
+                const Text('DAFTAR KEWAJIBAN & STATUS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B), letterSpacing: 0.5)),
                 const SizedBox(height: 4),
-                const Text('Klik pada kartu untuk melihat rincian tanggal & jam riwayat pembayaran.', style: TextStyle(color: Colors.grey, fontSize: 11, fontStyle: FontStyle.italic)),
+                const Text('Klik pada kartu untuk melihat rincian tanggal & cetak kwitansi.', style: TextStyle(color: Colors.grey, fontSize: 11, fontStyle: FontStyle.italic)),
                 const SizedBox(height: 12),
                 
-                // 🔥 REVISI PAK HALIM: 1 DAFTAR TUNGGAL (UNIFIED LIST)
                 ListView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -431,7 +575,6 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
                     bool isGratis = isSPP && isKelas10;
                     int kewajiban = isGratis ? 0 : kewajibanAsli;
 
-                    // Hitung total yang SUDAH dibayar (Hanya hitung yang LUNAS / ACC TU)
                     int totalDibayar = 0;
                     bool adaPending = false;
                     for (var t in listTransaksi) {
@@ -444,7 +587,6 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
                     }
 
                     final int sisaKurang = (kewajiban - totalDibayar) > 0 ? (kewajiban - totalDibayar) : 0;
-                    // 🔥 LOGIKA LUNAS MUTLAK: Sisa = 0 dan sudah ada pembayaran masuk (Atau gratis)
                     final bool isLunas = isGratis || (sisaKurang == 0 && totalDibayar > 0);
 
                     return Card(
@@ -452,18 +594,15 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
                       margin: const EdgeInsets.only(bottom: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
-                        // 🔥 BORDER HIJAU JIKA LUNAS, BORDER ABU JIKA BELUM
                         side: BorderSide(color: isLunas ? Colors.green.shade400 : Colors.grey.shade300, width: isLunas ? 1.5 : 1.0),
                       ),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(16),
-                        // 🔥 MEMBUKA HISTORI DETAIL SAAT DIKLIK
                         onTap: () => _bukaDetailHistori(namaTagihan, listTransaksi, totalDibayar, kewajiban, sisaKurang, isLunas),
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Row(
                             children: [
-                              // IKON KIRI
                               CircleAvatar(
                                 radius: 24,
                                 backgroundColor: isLunas ? Colors.green.shade50 : (adaPending ? Colors.orange.shade50 : Colors.blue.shade50),
@@ -475,7 +614,6 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
                               ),
                               const SizedBox(width: 14),
 
-                              // TEKS TENGAH (INFORMASI SISA / LUNAS)
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -483,29 +621,25 @@ class _SiswaAdministrasiScreenState extends State<SiswaAdministrasiScreen> {
                                     Text(namaTagihan, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
                                     const SizedBox(height: 4),
                                     
-                                    // 🔥 LOGIKA KONDISIONAL BARU SESUAI KRITIK USER
                                     if (isGratis)
                                       const Text('GRATIS (Siswa Kelas 10)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.green))
                                     else if (isLunas)
                                       const Text('TELAH DIBAYAR LUNAS', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.green))
                                     else if (totalDibayar > 0) ...[
-                                      // KASUS CICILAN: MUNCUL SISA KURANG
                                       Text('Total: ${formatter.format(kewajiban)} | Masuk: ${formatter.format(totalDibayar)}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
                                       Text('Sisa Kurang: ${formatter.format(sisaKurang)}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red.shade700)),
                                       if (adaPending)
-                                        Text('⏳ Ada pembayaran menunggu verifikasi TU', style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.orange.shade800)),
+                                        Text('⏳ Ada pembayaran menunggu verifikasi', style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.orange.shade800)),
                                     ] else ...[
-                                      // KASUS BELUM BAYAR SAMA SEKALI: BERSIH TANPA TEKS SISA KURANG
                                       Text('Total Tagihan: ${formatter.format(kewajiban)}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
                                       Text('Status: Belum Dibayar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red.shade700)),
                                       if (adaPending)
-                                        Text('⏳ Ada pembayaran menunggu verifikasi TU', style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.orange.shade800)),
+                                        Text('⏳ Ada pembayaran menunggu verifikasi', style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.orange.shade800)),
                                     ],
                                   ],
                                 ),
                               ),
 
-                              // 🔥 REVISI PAK HALIM: JIKA LUNAS MUNCUL CEKLIS HIJAU, JIKA BELUM MUNCUL TOMBOL BAYAR
                               if (isLunas)
                                 const Padding(
                                   padding: EdgeInsets.only(left: 8),
