@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
+import '../services/popup_service.dart';
 
 class NilaiRaporScreen extends StatefulWidget {
   final String siswaId;
@@ -18,7 +18,6 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
   final _supabase = Supabase.instance.client;
   bool _isLoading = true;
   
-  // 🔥 REVISI PAK HALIM: STATE UNTUK PILIHAN HISTORI RAPOR (KELAS X, XI, XII)
   String _selectedSemesterLabel = 'Memuat...';
   String _selectedSemesterQuery = 'Semester 1 (Ganjil)';
   List<Map<String, String>> _daftarHistoriSemester = [];
@@ -35,40 +34,70 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
   }
 
   // =========================================================================
-  // 🔥 ALGORITMA PENETAPAN OPSI HISTORI BERDASARKAN TINGKAT KELAS
+  // 🔥 ALGORITMA DINAMIS: OPSI HISTORI BERDASARKAN KELAS & SEMESTER AKTIF
   // =========================================================================
   Future<void> _initProfilDanHistori() async {
     setState(() => _isLoading = true);
     try {
+      // 1. Cek Semester Aktif dari Sistem
+      final config = await _supabase.from('pengaturan_sistem').select('semester_aktif').maybeSingle();
+      bool isGanjilAktif = true;
+      if (config != null && config['semester_aktif'] != null) {
+        String smt = config['semester_aktif'].toString().toLowerCase();
+        if (smt.contains('genap') || smt.contains('2')) {
+          isGanjilAktif = false;
+        }
+      }
+
+      // 2. Cek Profil Siswa
       final profileRes = await _supabase
           .from('profiles')
           .select('full_name, kelas, nisn')
           .eq('id', widget.siswaId)
           .single();
 
-      String kelasAktif = (profileRes['kelas'] ?? 'X').toString();
-
-      List<Map<String, String>> histori = [];
+      String kelasAktif = (profileRes['kelas'] ?? 'X').toString().toUpperCase();
+      
+      String tingkat = 'X';
       if (kelasAktif.startsWith('XII') || kelasAktif.startsWith('12')) {
-        histori = [
-          {'label': 'XII - Semester 1 (Ganjil) [Aktif]', 'query': 'Semester 1 (Ganjil)'},
-          {'label': 'XI - Semester 2 (Genap) [Histori]', 'query': 'Semester 2 (Genap)'},
-          {'label': 'XI - Semester 1 (Ganjil) [Histori]', 'query': 'Semester 1 (Ganjil)'},
-          {'label': 'X - Semester 2 (Genap) [Histori]', 'query': 'Semester 2 (Genap)'},
-          {'label': 'X - Semester 1 (Ganjil) [Histori]', 'query': 'Semester 1 (Ganjil)'},
-        ];
+        tingkat = 'XII';
       } else if (kelasAktif.startsWith('XI') || kelasAktif.startsWith('11')) {
-        histori = [
-          {'label': 'XI - Semester 1 (Ganjil) [Aktif]', 'query': 'Semester 1 (Ganjil)'},
-          {'label': 'X - Semester 2 (Genap) [Histori]', 'query': 'Semester 2 (Genap)'},
-          {'label': 'X - Semester 1 (Ganjil) [Histori]', 'query': 'Semester 1 (Ganjil)'},
-        ];
-      } else {
-        histori = [
-          {'label': 'X - Semester 1 (Ganjil) [Aktif]', 'query': 'Semester 1 (Ganjil)'},
-          {'label': 'X - Semester 2 (Genap) [Aktif]', 'query': 'Semester 2 (Genap)'},
-        ];
+        tingkat = 'XI';
       }
+
+      // 3. Susun Histori Secara Logis & Bertahap
+      List<Map<String, String>> histori = [];
+      
+      histori.add({'label': 'X - Semester 1 (Ganjil)', 'query': 'Semester 1 (Ganjil)'});
+      if ((tingkat == 'X' && !isGanjilAktif) || tingkat == 'XI' || tingkat == 'XII') {
+        histori.add({'label': 'X - Semester 2 (Genap)', 'query': 'Semester 2 (Genap)'});
+      }
+      
+      if (tingkat == 'XI' || tingkat == 'XII') {
+        histori.add({'label': 'XI - Semester 1 (Ganjil)', 'query': 'Semester 1 (Ganjil)'});
+      }
+      if ((tingkat == 'XI' && !isGanjilAktif) || tingkat == 'XII') {
+        histori.add({'label': 'XI - Semester 2 (Genap)', 'query': 'Semester 2 (Genap)'});
+      }
+      
+      if (tingkat == 'XII') {
+        histori.add({'label': 'XII - Semester 1 (Ganjil)', 'query': 'Semester 1 (Ganjil)'});
+      }
+      if (tingkat == 'XII' && !isGanjilAktif) {
+        histori.add({'label': 'XII - Semester 2 (Genap)', 'query': 'Semester 2 (Genap)'});
+      }
+
+      // Tandai label [Aktif] pada array terakhir, sisanya [Histori]
+      for (int i = 0; i < histori.length; i++) {
+        if (i == histori.length - 1) {
+          histori[i]['label'] = '${histori[i]['label']} [Aktif]';
+        } else {
+          histori[i]['label'] = '${histori[i]['label']} [Histori]';
+        }
+      }
+
+      // Urutkan dari yang terbaru (Aktif) di atas
+      histori = histori.reversed.toList();
 
       if (mounted) {
         setState(() {
@@ -91,13 +120,12 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
   }
 
   // =========================================================================
-  // 🔥 ALGORITMA AGREGASI RAPOR SEJATI: RATA-RATA ULANGAN HARIAN AKURAT 100%
+  // ALGORITMA AGREGASI RAPOR SEJATI
   // =========================================================================
   Future<void> _fetchNilaiDanProfil() async {
     setState(() => _isLoading = true);
 
     try {
-      // 1. Kueri ke Supabase menggunakan filter semester terpilih
       final resNilai = await _supabase
           .from('nilai')
           .select('*')
@@ -120,7 +148,6 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
           };
         }
 
-        // Klasifikasi nilai ke dalam array kategori
         if (kategori.contains('tugas') || kategori.contains('harian') || kategori.contains('ulangan') || kategori == 'uh') {
           pivotLists[mapel]!['Ulangan Harian']!.add(nilai);
         } else if (kategori.contains('praktek')) {
@@ -132,7 +159,6 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
         }
       }
 
-      // 🔥 FUNGSI KALKULASI RATA-RATA SEJATI (Sum / Length) - REVISI PAK HALIM
       double hitungRataRata(List<double> listNilai) {
         if (listNilai.isEmpty) return 0.0;
         double total = listNilai.fold(0.0, (sum, item) => sum + item);
@@ -145,7 +171,6 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
         double pts = hitungRataRata(e.value['PTS']!);
         double pas = hitungRataRata(e.value['PAS']!);
 
-        // Hitung pembagi dinamis agar tidak membagi kategori yang belum diinput
         int pembagi = 0;
         double totalBobot = 0.0;
         if (ulanganHarian > 0) { totalBobot += ulanganHarian; pembagi++; }
@@ -188,12 +213,7 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        PopupService.show(
-          context,
-          'Gagal mengambil data rapor: $e',
-          isSuccess: false,
-          judul: 'Gagal Memuat',
-        );
+        PopupService.show(context, 'Gagal mengambil data rapor: $e', isSuccess: false, judul: 'Gagal Memuat');
       }
     }
   }
@@ -267,7 +287,7 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
                         children: [
                           pw.Text('Kelas Aktif  : $_kelasSiswa', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
                           pw.SizedBox(height: 4),
-                          pw.Text('Periode     : $_selectedSemesterLabel', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))
+                          pw.Text('Periode     : $_selectedSemesterQuery', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))
                         ],
                       ),
                     ),
@@ -281,28 +301,19 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
                   cellHeight: 28,
                   cellStyle: const pw.TextStyle(fontSize: 9),
                   cellAlignments: {
-                    0: pw.Alignment.center,
-                    1: pw.Alignment.centerLeft,
-                    2: pw.Alignment.center,
-                    3: pw.Alignment.center,
-                    4: pw.Alignment.center,
-                    5: pw.Alignment.center,
-                    6: pw.Alignment.center,
-                    7: pw.Alignment.center
+                    0: pw.Alignment.center, 1: pw.Alignment.centerLeft, 2: pw.Alignment.center, 3: pw.Alignment.center,
+                    4: pw.Alignment.center, 5: pw.Alignment.center, 6: pw.Alignment.center, 7: pw.Alignment.center
                   },
                   headers: ['No', 'Mata Pelajaran', 'KKM', 'Ulangan Harian*', 'Praktek', 'PTS/PAS', 'Nilai Akhir', 'Huruf'],
                   data: List<List<dynamic>>.generate(_dataRaporPivoted.length, (index) {
                     final n = _dataRaporPivoted[index];
                     double ptsPasAvg = (n['pts'] + n['pas']) / 2;
                     return [
-                      (index + 1).toString(),
-                      n['mapel'],
-                      '75', // KKM
+                      (index + 1).toString(), n['mapel'], '75',
                       n['ulangan_harian'] == 0 ? '-' : n['ulangan_harian'].toStringAsFixed(1),
                       n['praktek'] == 0 ? '-' : n['praktek'].toStringAsFixed(1),
                       ptsPasAvg == 0 ? '-' : ptsPasAvg.toStringAsFixed(1),
-                      n['akhir'].toStringAsFixed(1),
-                      n['predikat']
+                      n['akhir'].toStringAsFixed(1), n['predikat']
                     ];
                   }),
                 ),
@@ -345,12 +356,7 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
         name: 'E-Rapor_${_namaSiswa}_$_selectedSemesterQuery',
       );
     } catch (e) {
-      PopupService.show(
-        context,
-        'Error saat mencetak PDF: $e',
-        isSuccess: false,
-        judul: 'Gagal Mencetak',
-      );
+      PopupService.show(context, 'Error saat mencetak PDF: $e', isSuccess: false, judul: 'Gagal Mencetak');
     }
   }
 
@@ -383,46 +389,75 @@ class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
       ),
       body: Column(
         children: [
-          // 🔥 REVISI PAK HALIM: DROPDOWN PILIH HISTORI PERIODE KELAS (X, XI, XII)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-            ),
-            child: _daftarHistoriSemester.isEmpty
-                ? const SizedBox.shrink()
-                : DropdownButtonFormField<String>(
-                    value: _selectedSemesterLabel,
-                    isExpanded: true,
-                    icon: const Icon(Icons.history_edu_rounded, color: Color(0xFF1E40AF)),
-                    decoration: InputDecoration(
-                      labelText: 'Pilih Periode Rapor',
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.blue.shade100, width: 1.5)),
-                      focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)), borderSide: BorderSide(color: Color(0xFF1E40AF), width: 2)),
+          // 🔥 UI PINTAR: JIKA HANYA ADA 1 SEMESTER (KELAS 10 BARU), HILANGKAN DROPDOWN
+          if (_daftarHistoriSemester.length == 1)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blue.shade200)),
+                child: Row(
+                  children: [
+                    Icon(Icons.auto_awesome_rounded, color: Colors.blue.shade800),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Semester Berjalan', style: TextStyle(fontSize: 11, color: Colors.blue.shade700, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 2),
+                          Text(_selectedSemesterLabel, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.blue.shade900)),
+                        ],
+                      ),
                     ),
-                    items: _daftarHistoriSemester
-                        .map((item) => DropdownMenuItem(
-                              value: item['label'],
-                              child: Text(item['label']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E293B))),
-                            ))
-                        .toList(),
-                    onChanged: (val) {
-                      if (val != null && val != _selectedSemesterLabel) {
-                        final target = _daftarHistoriSemester.firstWhere((element) => element['label'] == val);
-                        setState(() {
-                          _selectedSemesterLabel = target['label']!;
-                          _selectedSemesterQuery = target['query']!;
-                        });
-                        _fetchNilaiDanProfil();
-                      }
-                    },
-                  ),
-          ),
+                  ],
+                ),
+              ),
+            )
+          else if (_daftarHistoriSemester.length > 1)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              ),
+              child: DropdownButtonFormField<String>(
+                value: _selectedSemesterLabel,
+                isExpanded: true,
+                icon: const Icon(Icons.history_edu_rounded, color: Color(0xFF1E40AF)),
+                decoration: InputDecoration(
+                  labelText: 'Pilih Periode Rapor',
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.blue.shade100, width: 1.5)),
+                  focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)), borderSide: BorderSide(color: Color(0xFF1E40AF), width: 2)),
+                ),
+                items: _daftarHistoriSemester
+                    .map((item) => DropdownMenuItem(
+                          value: item['label'],
+                          child: Text(item['label']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E293B))),
+                        ))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null && val != _selectedSemesterLabel) {
+                    final target = _daftarHistoriSemester.firstWhere((element) => element['label'] == val);
+                    setState(() {
+                      _selectedSemesterLabel = target['label']!;
+                      _selectedSemesterQuery = target['query']!;
+                    });
+                    _fetchNilaiDanProfil();
+                  }
+                },
+              ),
+            ),
+          
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E40AF)))
