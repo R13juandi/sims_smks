@@ -13,7 +13,9 @@ import 'tambah_user_screen.dart';
 import 'manajemen_user_screen.dart';
 import 'seeder_database_screen.dart';
 import 'manajemen_jadwal_screen.dart';
-import 'nilai_rapor_screen.dart'; 
+import 'nilai_rapor_screen.dart';
+// 🔥 IMPOR FILE BARU (PENAMBAHAN)
+import 'admin_guru_pengganti_screen.dart';
 
 // =========================================================================
 // 1. DASHBOARD ADMIN / KEPSEK / TATA USAHA
@@ -500,6 +502,9 @@ class _AdminDashboardState extends State<AdminDashboard>
         ), const SizedBox(height: 12),
 
         if (!isKepsek) ...[
+          // 🔥 MENU BARU: MANAJEMEN GURU PENGGANTI DITAMBAHKAN DI SINI
+          _buildMenuButton(Icons.transfer_within_a_station_rounded, 'Manajemen Guru Pengganti (Infal)', 'Tetapkan guru pengganti jika guru master berhalangan hadir', Colors.cyan.shade700, () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminGuruPenggantiScreen()))), const SizedBox(height: 12),
+
           _buildMenuButton(Icons.how_to_reg_rounded, 'Absensi Manual (Guru Inval)', 'Input absen kelas jika guru utama berhalangan hadir', Colors.purple.shade700, () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AbsensiManualInvalScreen()))), const SizedBox(height: 12),
         ],
 
@@ -1216,8 +1221,8 @@ class _DetailKasirScreenState extends State<DetailKasirScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: isLunas ? Colors.green.shade50 : Colors.orange.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: isLunas ? Colors.green.shade200 : Colors.orange.shade200)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Total Kewajiban: ${formatter.format(kewajiban)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), Text('Sudah Dibayar: ${formatter.format(totalMasuk)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green.shade800)), Text('Sisa Kekurangan: ${formatter.format(sisaKurang)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isLunas ? Colors.green.shade900 : Colors.red.shade700))])),
-              const SizedBox(height: 16), const Text('Daftar Tanggal & Jam Pembayaran:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)), const Divider(),
+              Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: isLunas ? Colors.green.shade50 : Colors.orange.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: isLunas ? Colors.green.shade200 : Colors.orange.shade200)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Total Kewajiban: ${formatter.format(kewajiban)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), Text('Sudah Dibayar: ${formatter.format(totalMasuk)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green.shade800)), Text('Sisa Kekurangan: ${formatter.format(sisaKurang)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isLunas ? Colors.green.shade900 : Colors.red.shade700) )])),
+              const SizedBox(height: 16), const Text('Daftar Tanggal & Jam Pembayaran:', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)), const Divider(),
               if (listBayar.isEmpty) const Padding(padding: EdgeInsets.all(20), child: Center(child: Text('Belum ada transaksi.', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)))) else ListView.builder(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), itemCount: listBayar.length, itemBuilder: (context, i) {
                 final b = listBayar[i]; final rawDate = (b['tanggal_bayar'] ?? b['created_at'] ?? '').toString(); String tglTampil = rawDate; try { if (rawDate.isNotEmpty) tglTampil = DateFormat('dd MMMM yyyy - HH:mm WIB').format(DateTime.parse(rawDate).toLocal()); } catch (_) {}
                 return Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(formatter.format(b['nominal'] ?? 0), style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900, fontSize: 14)), IconButton(icon: const Icon(Icons.print, color: Colors.red, size: 18), onPressed: () {})]), const SizedBox(height: 4), Text('Waktu: $tglTampil', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)), Text('Keterangan: ${b['bulan_tagihan'] ?? '-'} | Kasir: ${b['penerima'] ?? 'Admin'}', style: const TextStyle(fontSize: 11, color: Colors.grey))]));

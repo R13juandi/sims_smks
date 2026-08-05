@@ -25,11 +25,11 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
   DateTime _selectedDate = DateTime.now();
   String _namaGuruLogin = '';
 
-  // 🔥 FILTER REVISI DOSEN UNTUK TAB 1 (AKSI CEPAT)
+  // 🔥 FILTER REVISI: Opsi 'Semua Mapel' DIHAPUS TOTAL
   String _selectedKelasTab1 = 'Semua Kelas';
-  String _selectedMapelTab1 = 'Semua Mapel';
+  String? _selectedMapelTab1; // Dibuat nullable agar bisa auto-select
   List<String> _listKelasTab1 = ['Semua Kelas'];
-  List<String> _listMapelTab1 = ['Semua Mapel'];
+  List<String> _listMapelTab1 = [];
 
   // Data untuk Tab 2: Rekap Akumulasi
   List<Map<String, dynamic>> _listRekapSiswa = [];
@@ -86,6 +86,35 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
   }
 
   // =========================================================================
+  // 🔥 LOGIKA PINTAR UX: DEPENDENT DROPDOWN (AUTO-SELECT MAPEL)
+  // =========================================================================
+  void _updateMapelDropdown() {
+    Set<String> setM1 = {}; // Tidak ada opsi 'Semua Mapel'
+    
+    for (var a in _dataAbsen) {
+      final p = a['profiles'] ?? {};
+      final k = (p['kelas'] ?? '').toString().trim();
+      final m = (a['mapel'] ?? '').toString().trim();
+
+      if (m.isNotEmpty) {
+        if (_selectedKelasTab1 == 'Semua Kelas' || k == _selectedKelasTab1) {
+          setM1.add(m);
+        }
+      }
+    }
+
+    _listMapelTab1 = setM1.toList()..sort();
+
+    if (_listMapelTab1.isNotEmpty) {
+      if (_selectedMapelTab1 == null || !_listMapelTab1.contains(_selectedMapelTab1)) {
+        _selectedMapelTab1 = _listMapelTab1.first;
+      }
+    } else {
+      _selectedMapelTab1 = null;
+    }
+  }
+
+  // =========================================================================
   // MENGAMBIL DATA UNTUK KEDUA TAB SEKALIGUS
   // =========================================================================
   Future<void> _fetchGuruDanRekap() async {
@@ -105,13 +134,10 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
           .order('waktu_absen', ascending: false);
 
       Set<String> setK1 = {'Semua Kelas'};
-      Set<String> setM1 = {'Semua Mapel'};
       for (var a in res) {
         final p = a['profiles'] ?? {};
         final k = (p['kelas'] ?? '').toString().trim();
-        final m = (a['mapel'] ?? '').toString().trim();
         if (k.isNotEmpty) setK1.add(k);
-        if (m.isNotEmpty) setM1.add(m);
       }
 
       final resSiswa = await _supabase
@@ -162,10 +188,10 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
           _daftarKelas = setKelas.toList();
           
           _listKelasTab1 = setK1.toList()..sort((a,b) => a == 'Semua Kelas' ? -1 : a.compareTo(b));
-          _listMapelTab1 = setM1.toList()..sort((a,b) => a == 'Semua Mapel' ? -1 : a.compareTo(b));
-          
           if (!_listKelasTab1.contains(_selectedKelasTab1)) _selectedKelasTab1 = 'Semua Kelas';
-          if (!_listMapelTab1.contains(_selectedMapelTab1)) _selectedMapelTab1 = 'Semua Mapel';
+
+          // 🔥 Eksekusi pembaruan list Mapel & Auto-Select
+          _updateMapelDropdown();
 
           _isLoading = false; 
         });
@@ -265,7 +291,6 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
                         final String mapel = log['mapel'] ?? '-';
                         final String tgl = log['tanggal'] ?? '-';
                         
-                        // HITUNG LOKASI UNTUK TAB 2
                         double? lat; if (log['lat'] != null) lat = double.tryParse(log['lat'].toString());
                         double? lng; if (log['lng'] != null) lng = double.tryParse(log['lng'].toString());
                         
@@ -357,14 +382,21 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
   }
 
   // =========================================================================
-  // WIDGET TAB 1 (REVISI DOSEN: FILTER & GROUPING KELAS + MAPEL)
+  // WIDGET TAB 1 (FILTER & GROUPING KELAS + AUTO-SELECT MAPEL DINAMIS)
   // =========================================================================
   Widget _buildTabAksiCepatHarian() {
+    bool isSemuaKelas = _selectedKelasTab1 == 'Semua Kelas';
+
     final filteredTab1 = _dataAbsen.where((a) {
       final k = (a['profiles']?['kelas'] ?? '').toString().trim();
       final m = (a['mapel'] ?? '').toString().trim();
-      bool matchK = _selectedKelasTab1 == 'Semua Kelas' || k == _selectedKelasTab1;
-      bool matchM = _selectedMapelTab1 == 'Semua Mapel' || m == _selectedMapelTab1;
+      
+      bool matchK = isSemuaKelas || k == _selectedKelasTab1;
+      
+      // 🔥 LOGIKA PINTAR: Jika pilih "Semua Kelas", kita ABAIKAN filter mapel 
+      // agar semua mapel tampil dan tidak ada yang tersaring (hilang).
+      bool matchM = isSemuaKelas || _selectedMapelTab1 == null || m == _selectedMapelTab1;
+      
       return matchK && matchM;
     }).toList();
 
@@ -395,8 +427,11 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
           ),
         ),
         
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12), color: Colors.white,
+        // 🔥 AREA FILTER DINAMIS
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12), 
+          color: Colors.white,
           child: Row(
             children: [
               Expanded(
@@ -404,18 +439,29 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
                   value: _selectedKelasTab1,
                   decoration: InputDecoration(labelText: 'Filter Kelas', labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), isDense: true, contentPadding: const EdgeInsets.all(10)),
                   items: _listKelasTab1.map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 12)))).toList(),
-                  onChanged: (v) => setState(() => _selectedKelasTab1 = v!),
+                  onChanged: (v) {
+                    if (v != null) {
+                      setState(() {
+                        _selectedKelasTab1 = v;
+                        _updateMapelDropdown(); 
+                      });
+                    }
+                  },
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _selectedMapelTab1,
-                  decoration: InputDecoration(labelText: 'Filter Mapel', labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), isDense: true, contentPadding: const EdgeInsets.all(10)),
-                  items: _listMapelTab1.map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))).toList(),
-                  onChanged: (v) => setState(() => _selectedMapelTab1 = v!),
+              
+              // 🔥 JIKA SEMUA KELAS DIPILIH, SEMBUNYIKAN DROPDOWN MAPEL
+              if (!isSemuaKelas) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _selectedMapelTab1,
+                    decoration: InputDecoration(labelText: 'Filter Mapel', labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), isDense: true, contentPadding: const EdgeInsets.all(10)),
+                    items: _listMapelTab1.map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))).toList(),
+                    onChanged: _listMapelTab1.isEmpty ? null : (v) => setState(() => _selectedMapelTab1 = v),
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -423,7 +469,7 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
 
         Expanded(
           child: groupedData.isEmpty
-              ? const Center(child: Text('Tidak ada data absensi mengajar pada filter ini.', style: TextStyle(color: Colors.grey)))
+              ? const Center(child: Text('Tidak ada data absensi pada mapel/kelas ini.', style: TextStyle(color: Colors.grey)))
               : ListView.builder(
                   padding: const EdgeInsets.all(16), 
                   itemCount: sortedKeys.length,
@@ -456,7 +502,6 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
                                 double? lat; if (a['lat'] != null) lat = double.tryParse(a['lat'].toString());
                                 double? lng; if (a['lng'] != null) lng = double.tryParse(a['lng'].toString());
 
-                                // 🔥 TRANSLATE KOORDINAT KE NAMA LOKASI
                                 String infoLokasi = _getInformasiLokasi(lat, lng);
                                 
                                 String statusText = 'Hadir'; Color warnaStatus = Colors.green; String kodeTampil = a['status'] ?? 'H';
@@ -494,8 +539,6 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
                                                     children: [
                                                       Text('⏰ $jamAbsen', style: const TextStyle(fontSize: 11, color: Colors.blueGrey, fontWeight: FontWeight.bold)),
                                                       const Spacer(),
-                                                      
-                                                      // 🔥 KOTAK BIRU NAMA LOKASI (Rumah Tomang, Kampus, dll)
                                                       if (infoLokasi.isNotEmpty)
                                                         Flexible(
                                                           flex: 2,
@@ -525,7 +568,7 @@ class _RekapAbsensiGuruScreenState extends State<RekapAbsensiGuruScreen> {
                                           ],
                                         ),
                                         
-                                        // TOMBOL AKSI SAJA (TANPA TOMBOL DETAIL)
+                                        // TOMBOL AKSI
                                         if (verifikasi == 'Pending' || a['status'] != 'A') ...[
                                           const Divider(height: 24),
                                           Row(

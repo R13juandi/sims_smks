@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
 
 class JadwalDashboardScreen extends StatefulWidget {
   const JadwalDashboardScreen({super.key});
@@ -16,6 +17,10 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
   List<Map<String, dynamic>> _semuaJadwal = [];
   List<Map<String, dynamic>> _historiJadwal = [];
   
+  // 🔥 MENAMPUNG DATA JADWAL PENGGANTI & GURU
+  List<Map<String, dynamic>> _listJadwalPengganti = [];
+  Map<String, String> _mapNamaGuru = {};
+
   String? _selectedKelas;
   List<String> _listKelasTersedia = [];
   late TabController _tabController;
@@ -41,22 +46,33 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
       final user = _supabase.auth.currentUser;
       final prof = await _supabase.from('profiles').select('*').eq('id', user!.id).single();
       
-      // 🔥 OTOMATIS: Mendeteksi Semester Berjalan Sesuai Waktu Real
+      // 🔥 1. Ambil Nama Semua Guru (Untuk Override Nama)
+      final resGuru = await _supabase.from('profiles').select('id, full_name').inFilter('role', ['guru', 'admin', 'kepsek']);
+      for (var g in resGuru) {
+        _mapNamaGuru[g['id'].toString()] = g['full_name'].toString();
+      }
+
+      // 🔥 2. Ambil Data Jadwal Pengganti (Khusus Tanggal Hari Ini)
+      final String tglHariIni = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final resPengganti = await _supabase.from('jadwal_pengganti').select('*').eq('tanggal', tglHariIni);
+      _listJadwalPengganti = List<Map<String, dynamic>>.from(resPengganti);
+      
+      // OTOMATIS: Mendeteksi Semester Berjalan Sesuai Waktu Real
       DateTime now = DateTime.now();
       int currentStartYear = now.month >= 7 ? now.year : now.year - 1;
       String currentTa = "$currentStartYear/${currentStartYear + 1}";
       String currentSmtStr = now.month >= 7 ? "Ganjil" : "Genap";
       
-      // 1. Ambil Jadwal Semester Berjalan
-      final resJadwal = await _supabase.from('jadwal').select('*').eq('semester', currentSmtStr).eq('tahun_ajaran', currentTa);
+      // 3. Ambil Jadwal Semester Berjalan (Master)
+      final resJadwal = await _supabase.from('jadwal_pelajaran').select('*').eq('semester', currentSmtStr).eq('tahun_ajaran', currentTa);
       List<Map<String, dynamic>> tempJadwal = List<Map<String, dynamic>>.from(resJadwal);
       
-      // 2. Ambil Histori Jadwal Semester Lalu (Untuk Kelas 11 & 12)
+      // 4. Ambil Histori Jadwal Semester Lalu (Untuk Kelas 11 & 12)
       List<Map<String, dynamic>> tempHistori = [];
       String kelasSiswa = (prof['kelas'] ?? '').toString();
       
       if (!kelasSiswa.startsWith('X ') && !kelasSiswa.startsWith('10')) {
-        final resHistori = await _supabase.from('jadwal').select('*').neq('tahun_ajaran', currentTa);
+        final resHistori = await _supabase.from('jadwal_pelajaran').select('*').neq('tahun_ajaran', currentTa);
         tempHistori = List<Map<String, dynamic>>.from(resHistori);
       }
       
@@ -79,8 +95,42 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
         });
       }
     } catch (e) {
+      debugPrint('Error fetch jadwal: $e');
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  // =========================================================================
+  // 🔥 FUNGSI MERGE/OVERRIDE JADWAL MASTER DENGAN GURU PENGGANTI
+  // =========================================================================
+  List<Map<String, dynamic>> _terapkanGuruPengganti(List<Map<String, dynamic>> jadwalMaster) {
+    List<Map<String, dynamic>> hasil = [];
+
+    for (var j in jadwalMaster) {
+      // Duplikasi map agar tidak merusak data master
+      Map<String, dynamic> jadwalBaru = Map.from(j);
+      
+      // Nama Guru Asli dari ID Master
+      String namaGuruAsli = _mapNamaGuru[j['guru_id'].toString()] ?? 'Belum Diatur';
+      jadwalBaru['guru_tampil'] = namaGuruAsli;
+      jadwalBaru['is_diganti'] = false;
+
+      // Cek apakah ada di tabel pengganti hari ini
+      var cekPengganti;
+      try {
+        cekPengganti = _listJadwalPengganti.firstWhere((p) => p['jadwal_id'].toString() == j['id'].toString());
+      } catch (_) {}
+
+      if (cekPengganti != null) {
+        String namaGuruGanti = _mapNamaGuru[cekPengganti['guru_pengganti_id'].toString()] ?? 'Guru Pengganti';
+        jadwalBaru['guru_tampil'] = '$namaGuruGanti (Menggantikan: $namaGuruAsli)';
+        jadwalBaru['is_diganti'] = true;
+      }
+
+      hasil.add(jadwalBaru);
+    }
+
+    return hasil;
   }
 
   @override
@@ -88,6 +138,10 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
     bool isSiswa = _biodata['role'] == 'siswa';
     String kelasSiswa = (_biodata['kelas'] ?? '').toString();
     bool isKelasSepuluh = kelasSiswa.startsWith('X ') || kelasSiswa.startsWith('10');
+
+    // 🔥 TERAPKAN OVERRIDE PADA SEMUA JADWAL
+    List<Map<String, dynamic>> jadwalBerjalanTer-override = _terapkanGuruPengganti(_semuaJadwal);
+    List<Map<String, dynamic>> jadwalHistoriTer-override = _terapkanGuruPengganti(_historiJadwal);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -112,7 +166,7 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
         : TabBarView(
             controller: _tabController,
             children: [
-              _buildJadwalList(_semuaJadwal, isSiswa, false),
+              _buildJadwalList(jadwalBerjalanTer-override, isSiswa, false),
               isSiswa && isKelasSepuluh
                 ? Center(
                     child: Column(
@@ -128,7 +182,7 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
                       ],
                     ),
                   )
-                : _buildJadwalList(_historiJadwal, isSiswa, true),
+                : _buildJadwalList(jadwalHistoriTer-override, isSiswa, true),
             ],
           ),
     );
@@ -148,6 +202,9 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
       if (!groupedJadwal.containsKey(hari)) groupedJadwal[hari] = [];
       groupedJadwal[hari]!.add(j);
     }
+
+    // Deteksi Nama Hari Ini (Untuk Highlight Biru)
+    final String hariIni = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'][DateTime.now().weekday - 1];
 
     return Column(
       children: [
@@ -178,35 +235,66 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
                   if (!groupedJadwal.containsKey(hari)) return const SizedBox(); 
                   
                   List<Map<String, dynamic>> listHariIni = groupedJadwal[hari]!;
+                  bool isToday = (hari == hariIni && !isHistori);
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Row(children: [const Icon(Icons.calendar_month, size: 18, color: Colors.grey), const SizedBox(width: 8), Text(hari.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.2))])),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12), 
+                        child: Row(
+                          children: [
+                            Icon(isToday ? Icons.today_rounded : Icons.calendar_month, size: 18, color: isToday ? Colors.blue.shade700 : Colors.grey), 
+                            const SizedBox(width: 8), 
+                            Text(isToday ? '$hari (Hari Ini)' : hari.toUpperCase(), style: TextStyle(fontWeight: FontWeight.bold, color: isToday ? Colors.blue.shade700 : Colors.grey, letterSpacing: 1.2))
+                          ]
+                        )
+                      ),
                       ...listHariIni.map((j) {
                         String jamMulai = j['jam_mulai'] != null && j['jam_mulai'].toString().length >= 5 ? j['jam_mulai'].toString().substring(0, 5) : '00:00';
                         String jamSelesai = j['jam_selesai'] != null && j['jam_selesai'].toString().length >= 5 ? j['jam_selesai'].toString().substring(0, 5) : '00:00';
                         
-                        String mapel = (j['mapel'] ?? j['mata_pelajaran'] ?? '-').toString().toUpperCase();
+                        String mapel = (j['mata_pelajaran'] ?? '-').toString().toUpperCase();
                         String ruang = (j['ruang_kelas'] ?? 'R. 101').toString();
                         
                         bool isIstirahat = mapel.contains('ISTIRAHAT') || mapel.contains('ISHOMA');
+                        
+                        // 🔥 CEK OVERRIDE GURU PENGGANTI 
+                        bool isDiganti = j['is_diganti'] ?? false;
+                        String namaGuru = (j['guru_tampil'] ?? '-').toString();
 
                         return Card(
-                          elevation: 0, margin: const EdgeInsets.only(bottom: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: isIstirahat ? Colors.orange.shade300 : Colors.grey.shade300)), color: isIstirahat ? Colors.orange.shade50 : Colors.white,
+                          elevation: 0, margin: const EdgeInsets.only(bottom: 12), 
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: isIstirahat ? Colors.orange.shade300 : (isDiganti ? Colors.teal.shade300 : Colors.grey.shade300))), 
+                          color: isIstirahat ? Colors.orange.shade50 : (isDiganti ? Colors.teal.shade50 : Colors.white),
                           child: ListTile(
                             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             leading: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: isIstirahat ? Colors.orange.shade100 : Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
-                              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Text(jamMulai, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isIstirahat ? Colors.orange.shade900 : Colors.blue.shade900)), Text(jamSelesai, style: TextStyle(fontSize: 11, color: isIstirahat ? Colors.orange.shade800 : Colors.grey))]),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: isIstirahat ? Colors.orange.shade100 : (isDiganti ? Colors.teal.shade100 : Colors.blue.shade50), borderRadius: BorderRadius.circular(8)),
+                              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Text(jamMulai, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isIstirahat ? Colors.orange.shade900 : (isDiganti ? Colors.teal.shade900 : Colors.blue.shade900))), Text(jamSelesai, style: TextStyle(fontSize: 11, color: isIstirahat ? Colors.orange.shade800 : Colors.grey))]),
                             ),
-                            title: Text(mapel, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isIstirahat ? Colors.orange.shade900 : Colors.black)),
+                            title: Row(
+                              children: [
+                                Expanded(child: Text(mapel, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isIstirahat ? Colors.orange.shade900 : Colors.black))),
+                                if (isDiganti)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.teal.shade700, borderRadius: BorderRadius.circular(4)),
+                                    child: const Text('INFAL', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1)),
+                                  )
+                              ],
+                            ),
                             subtitle: isIstirahat ? null : Padding(
                               padding: const EdgeInsets.only(top: 6), 
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Row(children: [const Icon(Icons.person, size: 14, color: Colors.grey), const SizedBox(width: 4), Expanded(child: Text(j['guru'] ?? j['guru_pengampu'] ?? '-', style: const TextStyle(fontSize: 12, color: Colors.grey)))]),
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(isDiganti ? Icons.swap_horiz_rounded : Icons.person, size: 14, color: isDiganti ? Colors.teal.shade800 : Colors.grey), const SizedBox(width: 4), 
+                                      Expanded(child: Text(namaGuru, style: TextStyle(fontSize: 12, color: isDiganti ? Colors.teal.shade900 : Colors.grey, fontWeight: isDiganti ? FontWeight.bold : FontWeight.normal))),
+                                    ]
+                                  ),
                                   const SizedBox(height: 4),
                                   Row(children: [const Icon(Icons.room, size: 14, color: Colors.blue), const SizedBox(width: 4), Text('Ruang: $ruang | ${j['semester'] ?? "Ganjil"} ${j['tahun_ajaran'] ?? ""}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade800))]),
                                 ],
