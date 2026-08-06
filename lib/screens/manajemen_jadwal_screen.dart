@@ -19,7 +19,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   bool _isLoading = true;
   String _currentUserRole = 'admin'; 
 
-  final List<String> _kelasList = ['X TKJ', 'XI TKJ', 'XII TKJ']; 
+  List<String> _kelasList = []; // 🔥 Sekarang dinamis!
   final List<String> _hariList = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
   Map<String, List<String>> _dynamicGuruMapel = {};
 
@@ -82,10 +82,27 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   Future<void> _fetchJadwal() async {
     setState(() => _isLoading = true);
     try {
+      // 🔥 MEMBACA TABEL 'jadwal' YANG ASLI!
       final data = await _supabase.from('jadwal').select().order('jam_mulai', ascending: true);
+      
+      // Ambil daftar kelas dari profil siswa agar dinamis
+      Set<String> kSet = {};
+      for (var j in data) {
+         if (j['kelas'] != null) kSet.add(j['kelas'].toString().trim());
+      }
+      try {
+        final pRes = await _supabase.from('profiles').select('kelas').eq('role', 'siswa');
+        for (var p in pRes) {
+          if (p['kelas'] != null && p['kelas'].toString().trim().isNotEmpty) kSet.add(p['kelas'].toString().trim());
+        }
+      } catch(_) {}
+
       if (mounted) {
+        _kelasList = kSet.toList()..sort();
+        if (_kelasList.isEmpty) _kelasList = ['X', 'XI', 'XII']; // Fallback
+        
         _jadwalList = data;
-        _extractPeriodeDariData(); // 🔥 Panggil ekstraksi periode
+        _extractPeriodeDariData(); 
       }
     } catch (e) {
       if (mounted) {
@@ -163,6 +180,68 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
       _jadwalTerpilih = hasil;
       _isLoading = false;
     });
+  }
+
+  // =========================================================================
+  // 🔥 ALGORITMA PENDETEKSI BENTROK JADWAL (ANTI OVERLAP)
+  // =========================================================================
+  int _waktuKeMenit(String timeString) {
+    // Mengonversi format "07:30:00" atau "07:30" menjadi integer (total menit)
+    try {
+      final parts = timeString.split(':');
+      return (int.parse(parts[0]) * 60) + int.parse(parts[1]);
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  String? _cekBentrokJadwal({
+    required String hari,
+    required String kelasTarget,
+    required String guru,
+    required String mulai,
+    required String selesai,
+    dynamic currentJadwalId, // Id untuk bypass saat edit jadwalnya sendiri
+  }) {
+    int newStart = _waktuKeMenit(mulai);
+    int newEnd = _waktuKeMenit(selesai);
+
+    if (newEnd <= newStart) {
+      return 'Waktu selesai tidak boleh lebih awal atau sama dengan waktu mulai.';
+    }
+
+    for (var j in _jadwalList) {
+      // Abaikan jika ini adalah jadwal yang sedang diedit
+      if (currentJadwalId != null && j['id'] == currentJadwalId) continue;
+      
+      // Jika harinya beda, aman
+      if (j['hari'] != hari) continue;
+
+      int oldStart = _waktuKeMenit(j['jam_mulai'] ?? '00:00');
+      int oldEnd = _waktuKeMenit(j['jam_selesai'] ?? '00:00');
+
+      // 🔥 LOGIKA IRISAN WAKTU (OVERLAP)
+      // Jadwal baru beririsan dengan jadwal lama jika:
+      // Mulai baru < Selesai lama DAN Selesai baru > Mulai lama
+      if (newStart < oldEnd && newEnd > oldStart) {
+        
+        // 1. Cek Bentrok Kelas (Satu kelas ga boleh ada 2 jadwal barengan)
+        if (j['kelas'] == kelasTarget) {
+          String jamInfo = '${j['jam_mulai'].toString().substring(0, 5)} - ${j['jam_selesai'].toString().substring(0, 5)}';
+          return 'KELAS BENTROK: Kelas $kelasTarget sudah ada jadwal ${j['mata_pelajaran']} pada jam $jamInfo.';
+        }
+
+        // 2. Cek Bentrok Guru (Satu guru ga boleh ngajar 2 kelas barengan)
+        // Abaikan jika guru '-' (jam istirahat)
+        String guruDb = (j['guru_pengampu'] ?? '-').toString();
+        if (guru != '-' && guruDb == guru) {
+          String jamInfo = '${j['jam_mulai'].toString().substring(0, 5)} - ${j['jam_selesai'].toString().substring(0, 5)}';
+          return 'GURU BENTROK: $guru sudah dijadwalkan mengajar ${j['mata_pelajaran']} di Kelas ${j['kelas']} pada jam $jamInfo.';
+        }
+      }
+    }
+
+    return null; // Null berarti AMAN, tidak ada bentrok.
   }
 
   // =========================================================================
@@ -301,11 +380,29 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                     final formatMulai = '${jamMulai!.hour.toString().padLeft(2, '0')}:${jamMulai!.minute.toString().padLeft(2, '0')}:00';
                     final formatSelesai = '${jamSelesai!.hour.toString().padLeft(2, '0')}:${jamSelesai!.minute.toString().padLeft(2, '0')}:00';
 
+                    // 🔥 EKSEKUSI CEK BENTROK
+                    final errorBentrok = _cekBentrokJadwal(
+                      hari: selectedHari!,
+                      kelasTarget: selectedKelas!,
+                      guru: isIstirahat ? '-' : selectedGuru!,
+                      mulai: formatMulai,
+                      selesai: formatSelesai,
+                      currentJadwalId: isEdit ? jadwal['id'] : null,
+                    );
+
+                    // Jika ada error bentrok, hentikan eksekusi dan munculkan peringatan
+                    if (errorBentrok != null) {
+                      PopupService.show(context, errorBentrok, isSuccess: false, judul: 'Jadwal Bentrok Terdeteksi!');
+                      return;
+                    }
+
                     try {
                       final data = {
                         'hari': selectedHari, 'kelas': selectedKelas, 'mata_pelajaran': selectedMapel, 'guru_pengampu': isIstirahat ? '-' : selectedGuru, 'jam_mulai': formatMulai, 'jam_selesai': formatSelesai,
                         'ruang_kelas': ruangController.text.trim(), 'semester': selectedSemester, 'tahun_ajaran': tahunController.text.trim()
                       };
+                      
+                      // MENYIMPAN KE TABEL JADWAL ASLI
                       if (isEdit) await _supabase.from('jadwal').update(data).eq('id', jadwal['id']);
                       else await _supabase.from('jadwal').insert(data);
                       

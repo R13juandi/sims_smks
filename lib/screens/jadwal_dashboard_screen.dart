@@ -46,7 +46,7 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
       final user = _supabase.auth.currentUser;
       final prof = await _supabase.from('profiles').select('*').eq('id', user!.id).single();
       
-      // 🔥 1. Ambil Nama Semua Guru (Untuk Override Nama)
+      // 🔥 1. Ambil Nama Semua Guru (Untuk Kamus Override Nama)
       final resGuru = await _supabase.from('profiles').select('id, full_name').inFilter('role', ['guru', 'admin', 'kepsek']);
       for (var g in resGuru) {
         _mapNamaGuru[g['id'].toString()] = g['full_name'].toString();
@@ -63,8 +63,8 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
       String currentTa = "$currentStartYear/${currentStartYear + 1}";
       String currentSmtStr = now.month >= 7 ? "Ganjil" : "Genap";
       
-      // 3. Ambil Jadwal Semester Berjalan (Master)
-      final resJadwal = await _supabase.from('jadwal_pelajaran').select('*').eq('semester', currentSmtStr).eq('tahun_ajaran', currentTa);
+      // 🔥 3. PERBAIKAN: Baca dari tabel 'jadwal' (Bukan jadwal_pelajaran)
+      final resJadwal = await _supabase.from('jadwal').select('*').eq('semester', currentSmtStr).eq('tahun_ajaran', currentTa);
       List<Map<String, dynamic>> tempJadwal = List<Map<String, dynamic>>.from(resJadwal);
       
       // 4. Ambil Histori Jadwal Semester Lalu (Untuk Kelas 11 & 12)
@@ -72,7 +72,8 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
       String kelasSiswa = (prof['kelas'] ?? '').toString();
       
       if (!kelasSiswa.startsWith('X ') && !kelasSiswa.startsWith('10')) {
-        final resHistori = await _supabase.from('jadwal_pelajaran').select('*').neq('tahun_ajaran', currentTa);
+        // 🔥 PERBAIKAN: Baca dari tabel 'jadwal'
+        final resHistori = await _supabase.from('jadwal').select('*').neq('tahun_ajaran', currentTa);
         tempHistori = List<Map<String, dynamic>>.from(resHistori);
       }
       
@@ -105,26 +106,29 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
   // =========================================================================
   List<Map<String, dynamic>> _terapkanGuruPengganti(List<Map<String, dynamic>> jadwalMaster) {
     List<Map<String, dynamic>> hasil = [];
+    // Deteksi Nama Hari Ini (agar override hanya terjadi pada jadwal hari ini)
+    final String hariIni = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'][DateTime.now().weekday - 1];
 
     for (var j in jadwalMaster) {
-      // Duplikasi map agar tidak merusak data master
       Map<String, dynamic> jadwalBaru = Map.from(j);
       
-      // Nama Guru Asli dari ID Master
-      String namaGuruAsli = _mapNamaGuru[j['guru_id'].toString()] ?? 'Belum Diatur';
+      // 🔥 PERBAIKAN: Langsung ambil nama dari kolom guru_pengampu
+      String namaGuruAsli = j['guru_pengampu'] ?? 'Belum Diatur';
       jadwalBaru['guru_tampil'] = namaGuruAsli;
       jadwalBaru['is_diganti'] = false;
 
-      // Cek apakah ada di tabel pengganti hari ini
-      var cekPengganti;
-      try {
-        cekPengganti = _listJadwalPengganti.firstWhere((p) => p['jadwal_id'].toString() == j['id'].toString());
-      } catch (_) {}
+      // Logika Penimpaan: Hanya menimpa jika jadwal berada pada 'Hari Ini'
+      if (j['hari'] == hariIni) {
+        var cekPengganti;
+        try {
+          cekPengganti = _listJadwalPengganti.firstWhere((p) => p['jadwal_id'].toString() == j['id'].toString());
+        } catch (_) {}
 
-      if (cekPengganti != null) {
-        String namaGuruGanti = _mapNamaGuru[cekPengganti['guru_pengganti_id'].toString()] ?? 'Guru Pengganti';
-        jadwalBaru['guru_tampil'] = '$namaGuruGanti (Menggantikan: $namaGuruAsli)';
-        jadwalBaru['is_diganti'] = true;
+        if (cekPengganti != null) {
+          String namaGuruGanti = _mapNamaGuru[cekPengganti['guru_pengganti_id'].toString()] ?? 'Guru Pengganti';
+          jadwalBaru['guru_tampil'] = '$namaGuruGanti (Menggantikan: $namaGuruAsli)';
+          jadwalBaru['is_diganti'] = true;
+        }
       }
 
       hasil.add(jadwalBaru);
@@ -140,8 +144,8 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
     bool isKelasSepuluh = kelasSiswa.startsWith('X ') || kelasSiswa.startsWith('10');
 
     // 🔥 TERAPKAN OVERRIDE PADA SEMUA JADWAL
-    List<Map<String, dynamic>> jadwalBerjalanTer-override = _terapkanGuruPengganti(_semuaJadwal);
-    List<Map<String, dynamic>> jadwalHistoriTer-override = _terapkanGuruPengganti(_historiJadwal);
+    List<Map<String, dynamic>> jadwalBerjalanTerOverride = _terapkanGuruPengganti(_semuaJadwal);
+    List<Map<String, dynamic>> jadwalHistoriTerOverride = _terapkanGuruPengganti(_historiJadwal);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -166,7 +170,7 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
         : TabBarView(
             controller: _tabController,
             children: [
-              _buildJadwalList(jadwalBerjalanTer-override, isSiswa, false),
+              _buildJadwalList(jadwalBerjalanTerOverride, isSiswa, false),
               isSiswa && isKelasSepuluh
                 ? Center(
                     child: Column(
@@ -182,7 +186,7 @@ class _JadwalDashboardScreenState extends State<JadwalDashboardScreen> with Sing
                       ],
                     ),
                   )
-                : _buildJadwalList(jadwalHistoriTer-override, isSiswa, true),
+                : _buildJadwalList(jadwalHistoriTerOverride, isSiswa, true),
             ],
           ),
     );
