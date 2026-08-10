@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import '../services/face_recognition_service.dart';
-import '../services/popup_service.dart'; // 🔥 IMPOR POPUP TENGAH LAYAR
+import '../services/popup_service.dart'; 
 import 'tambah_user_screen.dart';
 
 class ManajemenUserScreen extends StatefulWidget {
@@ -107,7 +107,9 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
 
   void _bukaDialogDetail(Map<String, dynamic> user) {
     bool isSiswa = user['role'] == 'siswa';
+    String fotoProfil = user['foto_profil'] ?? ''; // 🔥 POIN 1 FOTO PROFIL
     String tglLahir = user['tanggal_lahir'] ?? '-';
+    
     if (tglLahir != '-') {
       try { tglLahir = DateFormat('dd MMMM yyyy').format(DateTime.parse(tglLahir)); } catch (_) {}
     }
@@ -116,18 +118,24 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(
             children: [
-              CircleAvatar(backgroundColor: Colors.blue.shade100, child: Icon(isSiswa ? Icons.school : Icons.badge, color: Colors.blue.shade900)),
-              const SizedBox(width: 12),
-              Expanded(child: Text('Detail Pengguna', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue.shade900))),
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: Colors.blue.shade50, 
+                backgroundImage: fotoProfil.isNotEmpty ? NetworkImage(fotoProfil) : null,
+                child: fotoProfil.isEmpty ? Icon(isSiswa ? Icons.school : Icons.badge, color: Colors.blue.shade900) : null,
+              ),
+              const SizedBox(width: 16),
+              Expanded(child: Text('Detail Pengguna', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.blue.shade900))),
             ],
           ),
           content: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const SizedBox(height: 12),
                 _buildInfoRow('Nama Lengkap', user['full_name']),
                 _buildInfoRow('Email Akun', user['email']),
                 _buildInfoRow('Role / Jabatan', user['role'].toString().toUpperCase()),
@@ -156,9 +164,9 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
           ),
           actions: [
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), padding: const EdgeInsets.symmetric(horizontal: 20)),
               onPressed: () => Navigator.pop(context),
-              child: const Text('Tutup', style: TextStyle(color: Colors.white)),
+              child: const Text('Tutup', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
         );
@@ -173,8 +181,8 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 2),
-          Text(value != null && value.isNotEmpty ? value : '-', style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 4),
+          Text(value != null && value.isNotEmpty ? value : '-', style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -209,6 +217,9 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
     final List<String> listAgama = ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Khonghucu'];
     final List<String> listJK = ['Laki-laki', 'Perempuan'];
     final List<String> listKelasTersedia = ['X TKJ', 'XI TKJ', 'XII TKJ']; 
+    
+    String fotoProfilLama = user['foto_profil'] ?? '';
+    XFile? fotoProfilBaru;
 
     showDialog(
       context: context,
@@ -217,6 +228,7 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
         return StatefulBuilder(
           builder: (context, setStateDialog) {
             return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               title: Text('Edit Data: ${user['full_name']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               content: SizedBox(
                 width: double.maxFinite,
@@ -224,6 +236,44 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // 🔥 SEKSI UPLOAD FOTO PROFIL
+                      Center(
+                        child: Column(
+                          children: [
+                            GestureDetector(
+                              onTap: () async {
+                                final picker = ImagePicker();
+                                final foto = await picker.pickImage(source: ImageSource.gallery, imageQuality: 50);
+                                if (foto != null) {
+                                  setStateDialog(() => fotoProfilBaru = foto);
+                                }
+                              },
+                              child: Stack(
+                                alignment: Alignment.bottomRight,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 50,
+                                    backgroundColor: Colors.blue.shade50,
+                                    backgroundImage: fotoProfilBaru != null 
+                                      ? FileImage(File(fotoProfilBaru!.path)) 
+                                      : (fotoProfilLama.isNotEmpty ? NetworkImage(fotoProfilLama) : null) as ImageProvider?,
+                                    child: (fotoProfilBaru == null && fotoProfilLama.isEmpty) ? Icon(Icons.person, size: 50, color: Colors.blue.shade200) : null,
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(color: const Color(0xFF1E40AF), shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+                                    child: const Icon(Icons.camera_alt, color: Colors.white, size: 16),
+                                  )
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text('Ubah Foto Profil', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
                       _buildHeaderSection('Keamanan Akun'),
                       TextField(
                         controller: passwordCtrl, obscureText: true,
@@ -235,10 +285,10 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
                       if (isSiswa) ...[
                         _buildHeaderSection('Biometrik Wajah (CNN Baseline)'),
                         Container(
-                          padding: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: user['face_baseline'] != null ? Colors.green.shade50 : Colors.orange.shade50,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: user['face_baseline'] != null ? Colors.green : Colors.orange),
                           ),
                           child: Column(
@@ -249,16 +299,16 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
                                   Icon(
                                     user['face_baseline'] != null ? Icons.check_circle : Icons.warning_amber_rounded,
                                     color: user['face_baseline'] != null ? Colors.green : Colors.orange,
-                                    size: 20,
+                                    size: 24,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       user['face_baseline'] != null 
                                           ? 'Biometrik Wajah Aktif' 
                                           : 'Wajah Belum Terdaftar!',
                                       style: TextStyle(
-                                        fontSize: 13,
+                                        fontSize: 14,
                                         fontWeight: FontWeight.bold,
                                         color: user['face_baseline'] != null ? Colors.green.shade800 : Colors.orange.shade800,
                                       ),
@@ -271,26 +321,27 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
                                 user['face_baseline'] != null 
                                     ? 'Siswa sudah dapat melakukan presensi Smart Scan.' 
                                     : 'Siswa ditolak akses absen hingga wajahnya didaftarkan.',
-                                style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
+                                style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
                               ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 12),
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton.icon(
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF1E40AF),
                                     foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                   ),
                                   onPressed: _isUpdatingFace 
                                       ? null 
                                       : () => _updateWajahSiswaMenyusul(user['id'], user['full_name'] ?? 'Siswa'),
                                   icon: _isUpdatingFace 
                                       ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                      : const Icon(Icons.camera_alt_rounded, size: 16),
+                                      : const Icon(Icons.camera_alt_rounded, size: 18),
                                   label: Text(
-                                    user['face_baseline'] != null ? 'Perbarui Foto Wajah' : 'Daftarkan Wajah Sekarang',
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                    user['face_baseline'] != null ? 'Perbarui Wajah Siswa Ini' : 'Daftarkan Wajah Sekarang',
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                                   ),
                                 ),
                               ),
@@ -351,16 +402,17 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
               actions: [
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), padding: const EdgeInsets.symmetric(horizontal: 16)),
                   onPressed: () async {
                     Navigator.pop(context);
                     _prosesUpdateUser(
                       userId: user['id'], roleAsliSiswa: isSiswa, name: nameCtrl.text, hp: hpCtrl.text, alamat: alamatCtrl.text, nik: nikCtrl.text,
                       tmptLahir: tempatLahirCtrl.text, tglLahir: tglLahirCtrl.text, jk: selectedJK, agama: selectedAgama, roleBaru: selectedRole,
-                      nisn: nisnCtrl.text, nipd: nipdCtrl.text, kelasSiswa: selectedKelasSiswa, nip: nipCtrl.text, mapelStr: mapelCtrl.text, kelasMngjrStr: kelasMengajarCtrl.text, passwordBaru: passwordCtrl.text
+                      nisn: nisnCtrl.text, nipd: nipdCtrl.text, kelasSiswa: selectedKelasSiswa, nip: nipCtrl.text, mapelStr: mapelCtrl.text, kelasMngjrStr: kelasMengajarCtrl.text, passwordBaru: passwordCtrl.text,
+                      fotoBaru: fotoProfilBaru // 🔥 KIRIM DATA FOTO
                     );
                   },
-                  child: const Text('Simpan Perubahan', style: TextStyle(color: Colors.white)),
+                  child: const Text('Simpan Perubahan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
               ],
             );
@@ -371,24 +423,38 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
   }
 
   Widget _buildTextField(String label, TextEditingController ctrl, {bool isNumber = false, int maxLines = 1, String hint = ''}) {
-    return Padding(padding: const EdgeInsets.only(bottom: 12), child: TextField(controller: ctrl, keyboardType: isNumber ? TextInputType.number : TextInputType.text, maxLines: maxLines, decoration: InputDecoration(labelText: label, hintText: hint, border: const OutlineInputBorder())));
+    return Padding(padding: const EdgeInsets.only(bottom: 12), child: TextField(controller: ctrl, keyboardType: isNumber ? TextInputType.number : TextInputType.text, maxLines: maxLines, decoration: InputDecoration(labelText: label, hintText: hint, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))));
   }
 
   Widget _buildHeaderSection(String title) {
-    return Padding(padding: const EdgeInsets.only(top: 8, bottom: 12), child: Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue.shade900)));
+    return Padding(padding: const EdgeInsets.only(top: 8, bottom: 16), child: Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue.shade900)));
   }
 
   Future<void> _prosesUpdateUser({
     required String userId, required bool roleAsliSiswa, required String name, required String hp,
     required String alamat, required String nik, required String tmptLahir, required String tglLahir,
     String? jk, String? agama, required String roleBaru, required String nisn, required String nipd, String? kelasSiswa,
-    required String nip, required String mapelStr, required String kelasMngjrStr, required String passwordBaru
+    required String nip, required String mapelStr, required String kelasMngjrStr, required String passwordBaru,
+    XFile? fotoBaru, // Menerima foto baru
   }) async {
     setState(() => _isLoading = true);
     try {
       Map<String, dynamic> updates = {
         'full_name': name, 'nomor_hp': hp, 'alamat': alamat, 'nik': nik, 'tempat_lahir': tmptLahir, 'tanggal_lahir': tglLahir.isEmpty ? null : tglLahir, 'jenis_kelamin': jk, 'agama': agama,
       };
+
+      // 🔥 JIKA ADA FOTO BARU, UPLOAD KE STORAGE SUPABASE DULU
+      if (fotoBaru != null) {
+        try {
+          final ext = fotoBaru.path.split('.').last;
+          final namaFile = 'PROFIL_${userId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+          await _supabase.storage.from('foto_profil').upload(namaFile, File(fotoBaru.path));
+          final urlFoto = _supabase.storage.from('foto_profil').getPublicUrl(namaFile);
+          updates['foto_profil'] = urlFoto; // Simpan URL-nya ke Updates
+        } catch (e) {
+          debugPrint('Gagal upload foto: $e');
+        }
+      }
 
       if (roleAsliSiswa) {
         updates['nisn'] = nisn; updates['nipd'] = nipd; updates['kelas'] = kelasSiswa;
@@ -403,12 +469,12 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
       if (passwordBaru.isNotEmpty) {
         try {
           await _supabase.rpc('admin_update_password', params: {'uid': userId, 'new_pass': passwordBaru});
-          if (mounted) PopupService.show(context, 'Biodata & Password berhasil diperbarui!', isSuccess: true);
+          if (mounted) PopupService.show(context, 'Biodata, Foto & Password berhasil diperbarui!', isSuccess: true);
         } catch (e) {
-          if (mounted) PopupService.show(context, 'Biodata diperbarui, TAPI gagal ubah password (RPC Error).', isSuccess: false, judul: 'Peringatan');
+          if (mounted) PopupService.show(context, 'Biodata & Foto diperbarui, TAPI gagal ubah password.', isSuccess: false, judul: 'Peringatan');
         }
       } else {
-        if (mounted) PopupService.show(context, 'Biodata berhasil diperbarui!', isSuccess: true);
+        if (mounted) PopupService.show(context, 'Biodata & Foto berhasil diperbarui!', isSuccess: true);
       }
       _fetchUsersAndRole();
     } catch (e) {
@@ -537,11 +603,16 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
             title: Text('Kelas $kelas', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
             subtitle: Text('${listSiswaKelas.length} Siswa terdaftar', style: const TextStyle(fontSize: 12, color: Colors.grey)),
             children: listSiswaKelas.map((siswa) {
+              String fotoProfil = siswa['foto_profil'] ?? '';
               return Container(
                 decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.shade200))),
                 child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                  leading: const CircleAvatar(backgroundColor: Color(0xFFE6FFFA), child: Icon(Icons.school, color: Colors.teal)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  leading: CircleAvatar(
+                    radius: 20, backgroundColor: const Color(0xFFE6FFFA),
+                    backgroundImage: fotoProfil.isNotEmpty ? NetworkImage(fotoProfil) : null,
+                    child: fotoProfil.isEmpty ? const Icon(Icons.school, color: Colors.teal) : null,
+                  ),
                   title: Text(siswa['full_name'] ?? 'Tanpa Nama', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   subtitle: Text('NISN: ${siswa['nisn'] ?? '-'}', style: const TextStyle(fontSize: 12)),
                   onTap: () => _bukaDialogDetail(siswa), 
@@ -570,13 +641,18 @@ class _ManajemenUserScreenState extends State<ManajemenUserScreen> with TickerPr
       itemBuilder: (context, index) {
         final user = usersData[index];
         final role = (user['role'] ?? 'Siswa').toString().toUpperCase();
+        String fotoProfil = user['foto_profil'] ?? '';
         
         return Card(
           elevation: 0, margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade300)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade300)),
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            leading: CircleAvatar(backgroundColor: Colors.blue.shade50, child: Icon(Icons.badge, color: Colors.blue.shade900)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            leading: CircleAvatar(
+              radius: 22, backgroundColor: Colors.blue.shade50,
+              backgroundImage: fotoProfil.isNotEmpty ? NetworkImage(fotoProfil) : null,
+              child: fotoProfil.isEmpty ? Icon(Icons.badge, color: Colors.blue.shade900) : null,
+            ),
             title: Text(user['full_name'] ?? 'Tanpa Nama', style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

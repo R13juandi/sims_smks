@@ -13,17 +13,16 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   final _supabase = Supabase.instance.client;
   
   List<dynamic> _jadwalList = [];
-  List<dynamic> _jadwalTerpilih = []; // 🔥 Jadwal yang sudah difilter
+  List<dynamic> _jadwalTerpilih = []; 
   List<String> _guruList = [];
   
   bool _isLoading = true;
   String _currentUserRole = 'admin'; 
 
-  List<String> _kelasList = []; // 🔥 Sekarang dinamis!
+  List<String> _kelasList = []; 
   final List<String> _hariList = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
   Map<String, List<String>> _dynamicGuruMapel = {};
 
-  // 🔥 VARIABEL UNTUK FILTER HISTORI
   String _selectedPeriode = '';
   List<String> _daftarPeriodeHistori = [];
 
@@ -82,10 +81,8 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
   Future<void> _fetchJadwal() async {
     setState(() => _isLoading = true);
     try {
-      // 🔥 MEMBACA TABEL 'jadwal' YANG ASLI!
       final data = await _supabase.from('jadwal').select().order('jam_mulai', ascending: true);
       
-      // Ambil daftar kelas dari profil siswa agar dinamis
       Set<String> kSet = {};
       for (var j in data) {
          if (j['kelas'] != null) kSet.add(j['kelas'].toString().trim());
@@ -99,7 +96,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
 
       if (mounted) {
         _kelasList = kSet.toList()..sort();
-        if (_kelasList.isEmpty) _kelasList = ['X', 'XI', 'XII']; // Fallback
+        if (_kelasList.isEmpty) _kelasList = ['X', 'XI', 'XII']; 
         
         _jadwalList = data;
         _extractPeriodeDariData(); 
@@ -112,9 +109,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     }
   }
 
-  // =========================================================================
-  // 🔥 FUNGSI EKSTRAK PERIODE (SEMESTER & TAHUN AJARAN)
-  // =========================================================================
   void _extractPeriodeDariData() {
     Set<String> periods = {};
     
@@ -141,10 +135,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     }
     
     List<String> finalPeriods = periods.toList();
-    
-    finalPeriods.sort((a, b) {
-      return b.compareTo(a);
-    });
+    finalPeriods.sort((a, b) => b.compareTo(a));
 
     if (finalPeriods.isEmpty) {
       finalPeriods.add('Semester $activeKey (Aktif)');
@@ -154,7 +145,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
 
     setState(() {
       _daftarPeriodeHistori = finalPeriods;
-      // Otomatis memilih Semester Aktif sebagai default
       _selectedPeriode = finalPeriods.firstWhere((p) => p.contains('(Aktif)'), orElse: () => finalPeriods.first);
     });
 
@@ -169,10 +159,8 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     List<dynamic> hasil = _jadwalList.where((j) {
       String dbSemester = (j['semester'] ?? '').toString().toLowerCase();
       String dbTahun = (j['tahun_ajaran'] ?? '').toString().toLowerCase();
-      
       bool matchSmt = dbSemester.contains(smtKeyword);
       bool matchTahun = tahunKeyword.isNotEmpty ? dbTahun.contains(tahunKeyword) : true;
-      
       return matchSmt && matchTahun;
     }).toList();
 
@@ -182,11 +170,7 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     });
   }
 
-  // =========================================================================
-  // 🔥 ALGORITMA PENDETEKSI BENTROK JADWAL (ANTI OVERLAP)
-  // =========================================================================
   int _waktuKeMenit(String timeString) {
-    // Mengonversi format "07:30:00" atau "07:30" menjadi integer (total menit)
     try {
       final parts = timeString.split(':');
       return (int.parse(parts[0]) * 60) + int.parse(parts[1]);
@@ -201,38 +185,25 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     required String guru,
     required String mulai,
     required String selesai,
-    dynamic currentJadwalId, // Id untuk bypass saat edit jadwalnya sendiri
+    dynamic currentJadwalId, 
   }) {
     int newStart = _waktuKeMenit(mulai);
     int newEnd = _waktuKeMenit(selesai);
 
-    if (newEnd <= newStart) {
-      return 'Waktu selesai tidak boleh lebih awal atau sama dengan waktu mulai.';
-    }
+    if (newEnd <= newStart) return 'Waktu selesai tidak boleh lebih awal atau sama dengan waktu mulai.';
 
     for (var j in _jadwalList) {
-      // Abaikan jika ini adalah jadwal yang sedang diedit
       if (currentJadwalId != null && j['id'] == currentJadwalId) continue;
-      
-      // Jika harinya beda, aman
       if (j['hari'] != hari) continue;
 
       int oldStart = _waktuKeMenit(j['jam_mulai'] ?? '00:00');
       int oldEnd = _waktuKeMenit(j['jam_selesai'] ?? '00:00');
 
-      // 🔥 LOGIKA IRISAN WAKTU (OVERLAP)
-      // Jadwal baru beririsan dengan jadwal lama jika:
-      // Mulai baru < Selesai lama DAN Selesai baru > Mulai lama
       if (newStart < oldEnd && newEnd > oldStart) {
-        
-        // 1. Cek Bentrok Kelas (Satu kelas ga boleh ada 2 jadwal barengan)
         if (j['kelas'] == kelasTarget) {
           String jamInfo = '${j['jam_mulai'].toString().substring(0, 5)} - ${j['jam_selesai'].toString().substring(0, 5)}';
           return 'KELAS BENTROK: Kelas $kelasTarget sudah ada jadwal ${j['mata_pelajaran']} pada jam $jamInfo.';
         }
-
-        // 2. Cek Bentrok Guru (Satu guru ga boleh ngajar 2 kelas barengan)
-        // Abaikan jika guru '-' (jam istirahat)
         String guruDb = (j['guru_pengampu'] ?? '-').toString();
         if (guru != '-' && guruDb == guru) {
           String jamInfo = '${j['jam_mulai'].toString().substring(0, 5)} - ${j['jam_selesai'].toString().substring(0, 5)}';
@@ -240,20 +211,17 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
         }
       }
     }
-
-    return null; // Null berarti AMAN, tidak ada bentrok.
+    return null; 
   }
 
-  // =========================================================================
-  // FUNGSI DIALOG & HAPUS
-  // =========================================================================
-  void _showFormDialog({Map<String, dynamic>? jadwal}) {
+  // 🔥 PERBAIKAN: Menambahkan Parameter Default Kelas dan Hari agar otomatis terisi
+  void _showFormDialog({Map<String, dynamic>? jadwal, String? defaultKelas, String? defaultHari}) {
     if (_currentUserRole.contains('kepsek')) return; 
 
     final isEdit = jadwal != null;
 
-    String? selectedHari = isEdit ? jadwal['hari'] : null;
-    String? selectedKelas = isEdit ? jadwal['kelas'] : null;
+    String? selectedHari = isEdit ? jadwal['hari'] : defaultHari;
+    String? selectedKelas = isEdit ? jadwal['kelas'] : defaultKelas;
     String? selectedGuru = isEdit ? jadwal['guru_pengampu'] : null;
     String? selectedMapel = isEdit ? jadwal['mata_pelajaran'] : null;
     
@@ -380,7 +348,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                     final formatMulai = '${jamMulai!.hour.toString().padLeft(2, '0')}:${jamMulai!.minute.toString().padLeft(2, '0')}:00';
                     final formatSelesai = '${jamSelesai!.hour.toString().padLeft(2, '0')}:${jamSelesai!.minute.toString().padLeft(2, '0')}:00';
 
-                    // 🔥 EKSEKUSI CEK BENTROK
                     final errorBentrok = _cekBentrokJadwal(
                       hari: selectedHari!,
                       kelasTarget: selectedKelas!,
@@ -390,7 +357,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                       currentJadwalId: isEdit ? jadwal['id'] : null,
                     );
 
-                    // Jika ada error bentrok, hentikan eksekusi dan munculkan peringatan
                     if (errorBentrok != null) {
                       PopupService.show(context, errorBentrok, isSuccess: false, judul: 'Jadwal Bentrok Terdeteksi!');
                       return;
@@ -402,7 +368,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                         'ruang_kelas': ruangController.text.trim(), 'semester': selectedSemester, 'tahun_ajaran': tahunController.text.trim()
                       };
                       
-                      // MENYIMPAN KE TABEL JADWAL ASLI
                       if (isEdit) await _supabase.from('jadwal').update(data).eq('id', jadwal['id']);
                       else await _supabase.from('jadwal').insert(data);
                       
@@ -456,11 +421,11 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(title: const Text('Manajemen Jadwal Real-Time', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)), backgroundColor: Colors.white, elevation: 1, iconTheme: const IconThemeData(color: Colors.black)),
+      // 🔥 FAB dihapus karena tombol tambah sudah dipindah ke sebelah hari
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator()) 
         : Column(
             children: [
-              // 🔥 DROPDOWN FILTER HISTORI
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: const BoxDecoration(
@@ -493,7 +458,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                 ),
               ),
               
-              // 🔥 DAFTAR JADWAL HASIL FILTER
               Expanded(
                 child: _jadwalTerpilih.isEmpty
                     ? Center(
@@ -522,34 +486,56 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
                               leading: Icon(Icons.folder_shared_rounded, color: Colors.blue.shade700, size: 32),
                               children: _hariList.map((hariTujuan) {
                                 List<dynamic> jadwalHariIni = jadwalKelasIni.where((j) => j['hari'] == hariTujuan).toList();
-                                if (jadwalHariIni.isEmpty) return const SizedBox.shrink();
-
+                                
+                                // 🔥 TOMBOL TAMBAH DIPINDAHKAN KE SINI
                                 return ExpansionTile(
-                                  title: Text(hariTujuan, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)), leading: const Icon(Icons.calendar_today_rounded, color: Colors.orange), backgroundColor: Colors.grey.shade50,
-                                  children: jadwalHariIni.map((jadwal) {
-                                    final jamMulai = jadwal['jam_mulai'] != null && jadwal['jam_mulai'].toString().length >= 5 ? jadwal['jam_mulai'].toString().substring(0, 5) : '00:00';
-                                    final jamSelesai = jadwal['jam_selesai'] != null && jadwal['jam_selesai'].toString().length >= 5 ? jadwal['jam_selesai'].toString().substring(0, 5) : '00:00';
-                                    
-                                    final mapel = (jadwal['mata_pelajaran'] ?? '-').toString().toUpperCase();
-                                    final ruang = (jadwal['ruang_kelas'] ?? 'R. 101').toString();
-                                    bool isIstirahat = mapel.contains('ISTIRAHAT') || mapel.contains('ISHOMA');
+                                  title: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(hariTujuan, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                                      if (!isKepsek)
+                                        TextButton.icon(
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: Colors.blue.shade900,
+                                            backgroundColor: Colors.blue.shade50,
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                            minimumSize: Size.zero,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+                                          ),
+                                          icon: const Icon(Icons.add_circle_outline, size: 16),
+                                          label: const Text('Tambah', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                          onPressed: () => _showFormDialog(defaultKelas: kelasTujuan, defaultHari: hariTujuan),
+                                        ),
+                                    ],
+                                  ), 
+                                  leading: const Icon(Icons.calendar_today_rounded, color: Colors.orange), 
+                                  backgroundColor: Colors.grey.shade50,
+                                  children: jadwalHariIni.isEmpty 
+                                    ? [const Padding(padding: EdgeInsets.all(16.0), child: Text('Jadwal Kosong', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)))]
+                                    : jadwalHariIni.map((jadwal) {
+                                      final jamMulai = jadwal['jam_mulai'] != null && jadwal['jam_mulai'].toString().length >= 5 ? jadwal['jam_mulai'].toString().substring(0, 5) : '00:00';
+                                      final jamSelesai = jadwal['jam_selesai'] != null && jadwal['jam_selesai'].toString().length >= 5 ? jadwal['jam_selesai'].toString().substring(0, 5) : '00:00';
+                                      
+                                      final mapel = (jadwal['mata_pelajaran'] ?? '-').toString().toUpperCase();
+                                      final ruang = (jadwal['ruang_kelas'] ?? 'R. 101').toString();
+                                      bool isIstirahat = mapel.contains('ISTIRAHAT') || mapel.contains('ISHOMA');
 
-                                    return Container(
-                                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                                      decoration: BoxDecoration(color: isIstirahat ? Colors.orange.shade50 : Colors.white, border: Border(left: BorderSide(color: isIstirahat ? Colors.orange : Colors.blue.shade900, width: 4)), boxShadow: [BoxShadow(color: Colors.grey.shade200, blurRadius: 2, offset: const Offset(0, 1))]),
-                                      child: ListTile(
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                        title: Text(mapel, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isIstirahat ? Colors.orange.shade900 : Colors.black)),
-                                        subtitle: isIstirahat ? Text('$jamMulai - $jamSelesai WIB', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.w600, fontSize: 12)) : Padding(padding: const EdgeInsets.only(top: 4), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Guru: ${jadwal['guru_pengampu']} | Ruang: $ruang', style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('Waktu: $jamMulai - $jamSelesai WIB (${jadwal['semester'] ?? "Ganjil"})', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w600))])),
-                                        trailing: isKepsek 
-                                            ? null 
-                                            : Row(mainAxisSize: MainAxisSize.min, children: [
-                                                IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _showFormDialog(jadwal: jadwal)), 
-                                                IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 20), onPressed: () => _hapusJadwal(jadwal['id']))
-                                              ]),
-                                      ),
-                                    );
-                                  }).toList(),
+                                      return Container(
+                                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                        decoration: BoxDecoration(color: isIstirahat ? Colors.orange.shade50 : Colors.white, border: Border(left: BorderSide(color: isIstirahat ? Colors.orange : Colors.blue.shade900, width: 4)), boxShadow: [BoxShadow(color: Colors.grey.shade200, blurRadius: 2, offset: const Offset(0, 1))]),
+                                        child: ListTile(
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                          title: Text(mapel, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isIstirahat ? Colors.orange.shade900 : Colors.black)),
+                                          subtitle: isIstirahat ? Text('$jamMulai - $jamSelesai WIB', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.w600, fontSize: 12)) : Padding(padding: const EdgeInsets.only(top: 4), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Guru: ${jadwal['guru_pengampu']} | Ruang: $ruang', style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('Waktu: $jamMulai - $jamSelesai WIB (${jadwal['semester'] ?? "Ganjil"})', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w600))])),
+                                          trailing: isKepsek 
+                                              ? null 
+                                              : Row(mainAxisSize: MainAxisSize.min, children: [
+                                                  IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _showFormDialog(jadwal: jadwal)), 
+                                                  IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 20), onPressed: () => _hapusJadwal(jadwal['id']))
+                                                ]),
+                                        ),
+                                      );
+                                    }).toList(),
                                 );
                               }).toList(),
                             ),
@@ -559,12 +545,6 @@ class _ManajemenJadwalScreenState extends State<ManajemenJadwalScreen> {
               ),
             ],
           ),
-      floatingActionButton: isKepsek
-          ? null
-          : FloatingActionButton.extended(
-              backgroundColor: Colors.blue.shade900, onPressed: () => _showFormDialog(),
-              icon: const Icon(Icons.add, color: Colors.white), label: const Text('Tambah Jadwal', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
     );
   }
 }

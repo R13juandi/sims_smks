@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import '../services/popup_service.dart';
 
 class NilaiRaporScreen extends StatefulWidget {
   final String siswaId;
-  const NilaiRaporScreen({super.key, required this.siswaId});
+  final String? initialSemester;
+  final String? initialTahunAjaran;
+
+  const NilaiRaporScreen({
+    super.key,
+    required this.siswaId,
+    this.initialSemester,
+    this.initialTahunAjaran,
+  });
 
   @override
   State<NilaiRaporScreen> createState() => _NilaiRaporScreenState();
@@ -17,505 +21,298 @@ class NilaiRaporScreen extends StatefulWidget {
 class _NilaiRaporScreenState extends State<NilaiRaporScreen> {
   final _supabase = Supabase.instance.client;
   bool _isLoading = true;
-  
-  String _selectedSemesterLabel = 'Memuat...';
-  String _selectedSemesterQuery = 'Semester 1 (Ganjil)';
-  List<Map<String, String>> _daftarHistoriSemester = [];
 
-  String _namaSiswa = 'Memuat...';
-  String _kelasSiswa = '-';
-  String _nisnSiswa = '-';
-  List<Map<String, dynamic>> _dataRaporPivoted = [];
+  Map<String, dynamic> _biodata = {};
+  List<Map<String, dynamic>> _rekapMapel = [];
+
+  // 🔥 Filter Histori Rapor
+  String _selectedSmt = 'Ganjil';
+  String _selectedTa = '';
+  final List<String> _listTahunAjaran = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
 
   @override
   void initState() {
     super.initState();
-    _initProfilDanHistori();
+    
+    // Otomatis deteksi semester atau gunakan parameter dari Admin Dashboard
+    DateTime now = DateTime.now();
+    int currentYear = now.month >= 7 ? now.year : now.year - 1;
+    
+    _selectedTa = widget.initialTahunAjaran ?? '$currentYear/${currentYear + 1}';
+    _selectedSmt = widget.initialSemester ?? (now.month >= 7 ? 'Ganjil' : 'Genap');
+
+    _fetchDataRapor();
   }
 
-  // =========================================================================
-  // 🔥 ALGORITMA DINAMIS: OPSI HISTORI BERDASARKAN KELAS & SEMESTER AKTIF
-  // =========================================================================
-  Future<void> _initProfilDanHistori() async {
+  Future<void> _fetchDataRapor() async {
     setState(() => _isLoading = true);
     try {
-      // 1. Cek Semester Aktif dari Sistem
-      final config = await _supabase.from('pengaturan_sistem').select('semester_aktif').maybeSingle();
-      bool isGanjilAktif = true;
-      if (config != null && config['semester_aktif'] != null) {
-        String smt = config['semester_aktif'].toString().toLowerCase();
-        if (smt.contains('genap') || smt.contains('2')) {
-          isGanjilAktif = false;
-        }
-      }
-
-      // 2. Cek Profil Siswa
-      final profileRes = await _supabase
+      // 1. Ambil Biodata Siswa
+      final resProfile = await _supabase
           .from('profiles')
-          .select('full_name, kelas, nisn')
+          .select('*')
           .eq('id', widget.siswaId)
-          .single();
-
-      String kelasAktif = (profileRes['kelas'] ?? 'X').toString().toUpperCase();
+          .maybeSingle();
       
-      String tingkat = 'X';
-      if (kelasAktif.startsWith('XII') || kelasAktif.startsWith('12')) {
-        tingkat = 'XII';
-      } else if (kelasAktif.startsWith('XI') || kelasAktif.startsWith('11')) {
-        tingkat = 'XI';
-      }
+      _biodata = resProfile ?? {};
 
-      // 3. Susun Histori Secara Logis & Bertahap
-      List<Map<String, String>> histori = [];
-      
-      histori.add({'label': 'X - Semester 1 (Ganjil)', 'query': 'Semester 1 (Ganjil)'});
-      if ((tingkat == 'X' && !isGanjilAktif) || tingkat == 'XI' || tingkat == 'XII') {
-        histori.add({'label': 'X - Semester 2 (Genap)', 'query': 'Semester 2 (Genap)'});
-      }
-      
-      if (tingkat == 'XI' || tingkat == 'XII') {
-        histori.add({'label': 'XI - Semester 1 (Ganjil)', 'query': 'Semester 1 (Ganjil)'});
-      }
-      if ((tingkat == 'XI' && !isGanjilAktif) || tingkat == 'XII') {
-        histori.add({'label': 'XI - Semester 2 (Genap)', 'query': 'Semester 2 (Genap)'});
-      }
-      
-      if (tingkat == 'XII') {
-        histori.add({'label': 'XII - Semester 1 (Ganjil)', 'query': 'Semester 1 (Ganjil)'});
-      }
-      if (tingkat == 'XII' && !isGanjilAktif) {
-        histori.add({'label': 'XII - Semester 2 (Genap)', 'query': 'Semester 2 (Genap)'});
-      }
-
-      // Tandai label [Aktif] pada array terakhir, sisanya [Histori]
-      for (int i = 0; i < histori.length; i++) {
-        if (i == histori.length - 1) {
-          histori[i]['label'] = '${histori[i]['label']} [Aktif]';
-        } else {
-          histori[i]['label'] = '${histori[i]['label']} [Histori]';
-        }
-      }
-
-      // Urutkan dari yang terbaru (Aktif) di atas
-      histori = histori.reversed.toList();
-
-      if (mounted) {
-        setState(() {
-          _namaSiswa = profileRes['full_name'] ?? 'Nama Tidak Diketahui';
-          _kelasSiswa = kelasAktif;
-          _nisnSiswa = profileRes['nisn'] ?? '-';
-          _daftarHistoriSemester = histori;
-          _selectedSemesterLabel = histori.first['label']!;
-          _selectedSemesterQuery = histori.first['query']!;
-        });
-      }
-
-      await _fetchNilaiDanProfil();
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        PopupService.show(context, 'Gagal memuat profil siswa: $e', isSuccess: false, judul: 'Gagal');
-      }
-    }
-  }
-
-  // =========================================================================
-  // ALGORITMA AGREGASI RAPOR SEJATI
-  // =========================================================================
-  Future<void> _fetchNilaiDanProfil() async {
-    setState(() => _isLoading = true);
-
-    try {
+      // 2. Ambil Nilai berdasarkan Filter Histori
+      String smtDb = _selectedSmt == 'Ganjil' ? 'Semester 1 (Ganjil)' : 'Semester 2 (Genap)';
       final resNilai = await _supabase
           .from('nilai')
           .select('*')
           .eq('siswa_id', widget.siswaId)
-          .ilike('semester', '%$_selectedSemesterQuery%');
+          .eq('semester', smtDb)
+          .eq('tahun_ajaran', _selectedTa);
 
-      Map<String, Map<String, List<double>>> pivotLists = {};
-
-      for (var n in resNilai) {
-        String mapel = n['mapel'] ?? n['mata_pelajaran'] ?? '-';
-        String kategori = (n['kategori'] ?? '').toString().toLowerCase();
-        double nilai = double.tryParse(n['nilai'].toString()) ?? 0.0;
-
-        if (!pivotLists.containsKey(mapel)) {
-          pivotLists[mapel] = {
-            'Ulangan Harian': [],
-            'Praktek': [],
-            'PTS': [],
-            'PAS': []
-          };
-        }
-
-        if (kategori.contains('tugas') || kategori.contains('harian') || kategori.contains('ulangan') || kategori == 'uh') {
-          pivotLists[mapel]!['Ulangan Harian']!.add(nilai);
-        } else if (kategori.contains('praktek')) {
-          pivotLists[mapel]!['Praktek']!.add(nilai);
-        } else if (kategori.contains('uts') || kategori.contains('pts')) {
-          pivotLists[mapel]!['PTS']!.add(nilai);
-        } else if (kategori.contains('uas') || kategori.contains('pas')) {
-          pivotLists[mapel]!['PAS']!.add(nilai);
-        }
+      // 3. Kelompokkan Nilai per Mata Pelajaran & Hitung Rata-rata
+      Map<String, Map<String, double>> grouped = {};
+      
+      for(var n in resNilai) {
+         String mapel = (n['mapel'] ?? n['mata_pelajaran'] ?? 'Tidak Diketahui').toString();
+         String kat = (n['kategori'] ?? '').toString().toLowerCase();
+         double val = double.tryParse(n['nilai'].toString()) ?? 0.0;
+         
+         if(!grouped.containsKey(mapel)) {
+            grouped[mapel] = {
+              'harian': 0, 'tugas': 0, 'praktek': 0, 'pts': 0, 'pas': 0, 
+              'count_harian': 0, 'count_tugas': 0
+            };
+         }
+         
+         if (kat.contains('harian') || kat.contains('ulangan')) { 
+           grouped[mapel]!['harian'] = grouped[mapel]!['harian']! + val; 
+           grouped[mapel]!['count_harian'] = grouped[mapel]!['count_harian']! + 1; 
+         }
+         else if (kat.contains('tugas')) { 
+           grouped[mapel]!['tugas'] = grouped[mapel]!['tugas']! + val; 
+           grouped[mapel]!['count_tugas'] = grouped[mapel]!['count_tugas']! + 1; 
+         }
+         else if (kat.contains('praktek')) { 
+           grouped[mapel]!['praktek'] = val; 
+         }
+         else if (kat.contains('pts') || kat.contains('uts')) { 
+           grouped[mapel]!['pts'] = val; 
+         }
+         else if (kat.contains('pas') || kat.contains('uas')) { 
+           grouped[mapel]!['pas'] = val; 
+         }
       }
 
-      double hitungRataRata(List<double> listNilai) {
-        if (listNilai.isEmpty) return 0.0;
-        double total = listNilai.fold(0.0, (sum, item) => sum + item);
-        return total / listNilai.length;
-      }
+      List<Map<String, dynamic>> finalRekap = [];
+      grouped.forEach((mapel, data) {
+         double avgHarian = data['count_harian']! > 0 ? data['harian']! / data['count_harian']! : 0;
+         double avgTugas = data['count_tugas']! > 0 ? data['tugas']! / data['count_tugas']! : 0;
+         
+         double rataHarianTugas = (avgHarian + avgTugas) / ((avgHarian > 0 && avgTugas > 0) ? 2 : 1);
+         if(avgHarian == 0 && avgTugas == 0) rataHarianTugas = 0;
 
-      List<Map<String, dynamic>> tempPivotData = pivotLists.entries.map((e) {
-        double ulanganHarian = hitungRataRata(e.value['Ulangan Harian']!);
-        double praktek = hitungRataRata(e.value['Praktek']!);
-        double pts = hitungRataRata(e.value['PTS']!);
-        double pas = hitungRataRata(e.value['PAS']!);
+         double praktek = data['praktek']!;
+         double pts = data['pts']!;
+         double pas = data['pas']!;
 
-        int pembagi = 0;
-        double totalBobot = 0.0;
-        if (ulanganHarian > 0) { totalBobot += ulanganHarian; pembagi++; }
-        if (praktek > 0) { totalBobot += praktek; pembagi++; }
-        if (pts > 0) { totalBobot += pts; pembagi++; }
-        if (pas > 0) { totalBobot += pas; pembagi++; }
+         // 🔥 FORMULA NILAI AKHIR (30% Harian, 20% Praktek, 20% PTS, 30% PAS)
+         double akhir = (rataHarianTugas * 0.3) + (praktek * 0.2) + (pts * 0.2) + (pas * 0.3);
+         
+         String mutu = 'D';
+         if(akhir >= 90) mutu = 'A';
+         else if(akhir >= 80) mutu = 'B';
+         else if(akhir >= 70) mutu = 'C';
 
-        double akhir = pembagi > 0 ? (totalBobot / pembagi) : 0.0;
+         finalRekap.add({
+            'mapel': mapel,
+            'rata_harian': rataHarianTugas,
+            'praktek': praktek,
+            'pts': pts,
+            'pas': pas,
+            'akhir': akhir,
+            'mutu': mutu
+         });
+      });
 
-        String predikat;
-        if (akhir >= 90) {
-          predikat = 'A';
-        } else if (akhir >= 80) {
-          predikat = 'B';
-        } else if (akhir >= 70) {
-          predikat = 'C';
-        } else {
-          predikat = 'D';
-        }
-
-        return {
-          'mapel': e.key,
-          'ulangan_harian': ulanganHarian,
-          'praktek': praktek,
-          'pts': pts,
-          'pas': pas,
-          'akhir': akhir,
-          'predikat': predikat
-        };
-      }).toList();
-
-      tempPivotData.sort((a, b) => a['mapel'].compareTo(b['mapel']));
+      // Urutkan abjad mata pelajaran
+      finalRekap.sort((a, b) => a['mapel'].toString().compareTo(b['mapel'].toString()));
 
       if (mounted) {
         setState(() {
-          _dataRaporPivoted = tempPivotData;
+          _rekapMapel = finalRekap;
           _isLoading = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        PopupService.show(context, 'Gagal mengambil data rapor: $e', isSuccess: false, judul: 'Gagal Memuat');
+        PopupService.show(context, 'Gagal memuat e-Rapor: $e', isSuccess: false);
       }
     }
   }
 
-  String _getNamaBulan(int bulan) {
-    List<String> namaBulan = [
-      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-    ];
-    return namaBulan[bulan - 1];
-  }
-
-  Future<void> _generatePdf() async {
-    final pdf = pw.Document();
-    try {
-      final imgBanten = await imageFromAssetBundle('assets/images/logo_banten.jpg');
-      final imgSmk = await imageFromAssetBundle('assets/images/logo_smk.png');
-      final imgTtdStempel = await imageFromAssetBundle('assets/images/ttd_stempel.png');
-
-      pdf.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(32),
-          build: (pw.Context context) {
-            final now = DateTime.now();
-            return pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Image(imgBanten, width: 65, height: 65),
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.center,
-                        children: [
-                          pw.Text('YAYASAN ISLAM AL AYANIAH', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-                          pw.Text('SMK ISLAM AL AYANIAH TANGERANG', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
-                          pw.SizedBox(height: 4),
-                          pw.Text('Jl. Halim Perdana Kusuma No 56-60 Kebon Besar Batu Ceper', style: const pw.TextStyle(fontSize: 9)),
-                          pw.Text('Kota Tangerang - BANTEN 15122 | Telp : 0899-8687-769', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                        ],
-                      ),
-                    ),
-                    pw.Image(imgSmk, width: 65, height: 65),
-                  ],
-                ),
-                pw.SizedBox(height: 8),
-                pw.Container(height: 2, color: PdfColors.black),
-                pw.SizedBox(height: 1.5),
-                pw.Container(height: 0.5, color: PdfColors.black),
-                pw.SizedBox(height: 20),
-                pw.Center(child: pw.Text('PENCAPAIAN KOMPETENSI PESERTA DIDIK', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold))),
-                pw.SizedBox(height: 16),
-                pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text('Nama Siswa  : $_namaSiswa', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
-                          pw.SizedBox(height: 4),
-                          pw.Text('NISN / NIPD   : $_nisnSiswa', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))
-                        ],
-                      ),
-                    ),
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.end,
-                        children: [
-                          pw.Text('Kelas Aktif  : $_kelasSiswa', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
-                          pw.SizedBox(height: 4),
-                          pw.Text('Periode     : $_selectedSemesterQuery', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                pw.SizedBox(height: 16),
-                pw.Table.fromTextArray(
-                  border: pw.TableBorder.all(color: PdfColors.grey600, width: 0.5),
-                  headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white, fontSize: 10),
-                  headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
-                  cellHeight: 28,
-                  cellStyle: const pw.TextStyle(fontSize: 9),
-                  cellAlignments: {
-                    0: pw.Alignment.center, 1: pw.Alignment.centerLeft, 2: pw.Alignment.center, 3: pw.Alignment.center,
-                    4: pw.Alignment.center, 5: pw.Alignment.center, 6: pw.Alignment.center, 7: pw.Alignment.center
-                  },
-                  headers: ['No', 'Mata Pelajaran', 'KKM', 'Ulangan Harian*', 'Praktek', 'PTS/PAS', 'Nilai Akhir', 'Huruf'],
-                  data: List<List<dynamic>>.generate(_dataRaporPivoted.length, (index) {
-                    final n = _dataRaporPivoted[index];
-                    double ptsPasAvg = (n['pts'] + n['pas']) / 2;
-                    return [
-                      (index + 1).toString(), n['mapel'], '75',
-                      n['ulangan_harian'] == 0 ? '-' : n['ulangan_harian'].toStringAsFixed(1),
-                      n['praktek'] == 0 ? '-' : n['praktek'].toStringAsFixed(1),
-                      ptsPasAvg == 0 ? '-' : ptsPasAvg.toStringAsFixed(1),
-                      n['akhir'].toStringAsFixed(1), n['predikat']
-                    ];
-                  }),
-                ),
-                pw.SizedBox(height: 6),
-                pw.Text('*Keterangan: Nilai Ulangan Harian dihitung dari Rata-Rata seluruh ulangan/tugas di semester ini.', style: pw.TextStyle(fontSize: 8, fontStyle: pw.FontStyle.italic, color: PdfColors.grey700)),
-                pw.SizedBox(height: 30),
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.center,
-                      children: [
-                        pw.Text('Mengetahui,', style: const pw.TextStyle(fontSize: 10)),
-                        pw.Text('Orang Tua / Wali', style: const pw.TextStyle(fontSize: 10)),
-                        pw.SizedBox(height: 60),
-                        pw.Text('( ......................................... )', style: const pw.TextStyle(fontSize: 10)),
-                      ],
-                    ),
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.center,
-                      children: [
-                        pw.Text('Tangerang, ${now.day} ${_getNamaBulan(now.month)} ${now.year}', style: const pw.TextStyle(fontSize: 10)),
-                        pw.Text('Kepala Sekolah,', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                        pw.SizedBox(height: 5),
-                        pw.Image(imgTtdStempel, width: 120, height: 80),
-                        pw.SizedBox(height: 5),
-                        pw.Text('AGUS RAHMADANI, SE', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, decoration: pw.TextDecoration.underline)),
-                      ],
-                    ),
-                  ],
-                ),
-              ],
-            );
-          },
-        ),
-      );
-      await Printing.layoutPdf(
-        onLayout: (PdfPageFormat format) async => pdf.save(),
-        name: 'E-Rapor_${_namaSiswa}_$_selectedSemesterQuery',
-      );
-    } catch (e) {
-      PopupService.show(context, 'Error saat mencetak PDF: $e', isSuccess: false, judul: 'Gagal Mencetak');
+  Color _getMutuColor(String mutu) {
+    switch (mutu) {
+      case 'A': return Colors.green.shade700;
+      case 'B': return Colors.blue.shade700;
+      case 'C': return Colors.orange.shade700;
+      default: return Colors.red.shade700;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    String fotoProfil = _biodata['foto_profil'] ?? '';
+    String nama = _biodata['full_name'] ?? 'Siswa Tidak Diketahui';
+    String nisn = _biodata['nisn'] ?? '-';
+    String kelas = _biodata['kelas'] ?? '-';
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('Rapor Akademik & Histori', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
-        backgroundColor: Colors.white,
-        elevation: 0.5,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue.shade900,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            icon: const Icon(Icons.print, size: 16),
-            label: const Text('Cetak e-Rapor'),
-            onPressed: _dataRaporPivoted.isEmpty ? null : _generatePdf,
-          ),
-          const SizedBox(width: 16)
-        ],
+        title: const Text('E-Rapor Siswa', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white, elevation: 0.5,
+        leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.black), onPressed: () => Navigator.pop(context)),
       ),
       body: Column(
         children: [
-          // 🔥 UI PINTAR: JIKA HANYA ADA 1 SEMESTER (KELAS 10 BARU), HILANGKAN DROPDOWN
-          if (_daftarHistoriSemester.length == 1)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-              ),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blue.shade200)),
-                child: Row(
-                  children: [
-                    Icon(Icons.auto_awesome_rounded, color: Colors.blue.shade800),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Semester Berjalan', style: TextStyle(fontSize: 11, color: Colors.blue.shade700, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 2),
-                          Text(_selectedSemesterLabel, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.blue.shade900)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          // 🔥 HEADER PROFIL SISWA
+          Container(
+            padding: const EdgeInsets.all(20), width: double.infinity, decoration: const BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0)))), 
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 30, backgroundColor: const Color(0xFFE6FFFA), 
+                  backgroundImage: fotoProfil.isNotEmpty ? NetworkImage(fotoProfil) : null, 
+                  child: fotoProfil.isEmpty ? const Icon(Icons.person, color: Colors.teal, size: 30) : null
+                ), 
+                const SizedBox(width: 16), 
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start, 
+                    children: [
+                      Text(nama, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))), 
+                      const SizedBox(height: 4), 
+                      Text('NISN: $nisn | Kelas: $kelas', style: const TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500))
+                    ]
+                  )
+                )
+              ]
             )
-          else if (_daftarHistoriSemester.length > 1)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-              ),
-              child: DropdownButtonFormField<String>(
-                value: _selectedSemesterLabel,
-                isExpanded: true,
-                icon: const Icon(Icons.history_edu_rounded, color: Color(0xFF1E40AF)),
-                decoration: InputDecoration(
-                  labelText: 'Pilih Periode Rapor',
-                  filled: true,
-                  fillColor: const Color(0xFFF8FAFC),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.blue.shade100, width: 1.5)),
-                  focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)), borderSide: BorderSide(color: Color(0xFF1E40AF), width: 2)),
-                ),
-                items: _daftarHistoriSemester
-                    .map((item) => DropdownMenuItem(
-                          value: item['label'],
-                          child: Text(item['label']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E293B))),
-                        ))
-                    .toList(),
-                onChanged: (val) {
-                  if (val != null && val != _selectedSemesterLabel) {
-                    final target = _daftarHistoriSemester.firstWhere((element) => element['label'] == val);
-                    setState(() {
-                      _selectedSemesterLabel = target['label']!;
-                      _selectedSemesterQuery = target['query']!;
-                    });
-                    _fetchNilaiDanProfil();
-                  }
-                },
-              ),
-            ),
+          ),
           
+          // 🔥 FILTER HISTORI SEMESTER
+          Container(
+            padding: const EdgeInsets.all(20), decoration: const BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0)))),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 1, 
+                  child: DropdownButtonFormField<String>(
+                    value: _selectedSmt, 
+                    decoration: InputDecoration(labelText: 'Semester', filled: true, fillColor: const Color(0xFFF1F5F9), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)), 
+                    items: ['Ganjil', 'Genap'].map((b) => DropdownMenuItem(value: b, child: Text(b, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)))).toList(), 
+                    onChanged: (val) { if (val != null) { setState(() => _selectedSmt = val); _fetchDataRapor(); } }
+                  )
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1, 
+                  child: DropdownButtonFormField<String>(
+                    value: _selectedTa, 
+                    decoration: InputDecoration(labelText: 'Tahun Ajaran', filled: true, fillColor: const Color(0xFFF1F5F9), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)), 
+                    items: _listTahunAjaran.map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)))).toList(), 
+                    onChanged: (val) { if (val != null) { setState(() => _selectedTa = val); _fetchDataRapor(); } }
+                  )
+                ),
+              ],
+            ),
+          ),
+
+          // 🔥 DAFTAR NILAI MAPEL
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E40AF)))
-                : _dataRaporPivoted.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.assignment_outlined, size: 60, color: Colors.grey.shade400),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Belum ada nilai yang diinputkan\nuntuk periode "$_selectedSemesterLabel".',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: Colors.grey, fontSize: 14, height: 1.5),
-                            ),
-                          ],
-                        ),
-                      )
-                    : SingleChildScrollView(
-                        scrollDirection: Axis.vertical,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: DataTable(
-                            headingRowColor: MaterialStateProperty.resolveWith((states) => Colors.blue.shade900),
-                            columnSpacing: 25,
-                            columns: const [
-                              DataColumn(label: Text('Mata Pelajaran', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                              DataColumn(label: Text('Ulangan Harian*', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                              DataColumn(label: Text('Praktek', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                              DataColumn(label: Text('PTS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                              DataColumn(label: Text('PAS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                              DataColumn(label: Text('Akhir', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                              DataColumn(label: Text('Mutu', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                            ],
-                            rows: _dataRaporPivoted.map((n) {
-                              bool isLulus = n['akhir'] >= 75.0; // KKM
-                              return DataRow(
-                                cells: [
-                                  DataCell(Text(n['mapel'].toString(), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
-                                  DataCell(Text(n['ulangan_harian'] == 0 ? '-' : n['ulangan_harian'].toStringAsFixed(1))),
-                                  DataCell(Text(n['praktek'] == 0 ? '-' : n['praktek'].toStringAsFixed(1))),
-                                  DataCell(Text(n['pts'] == 0 ? '-' : n['pts'].toStringAsFixed(1))),
-                                  DataCell(Text(n['pas'] == 0 ? '-' : n['pas'].toStringAsFixed(1))),
-                                  DataCell(Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(color: isLulus ? Colors.green.shade50 : Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
-                                    child: Text(n['akhir'].toStringAsFixed(1), style: TextStyle(fontWeight: FontWeight.bold, color: isLulus ? Colors.green.shade700 : Colors.red.shade700)),
-                                  )),
-                                  DataCell(Text(n['predikat'], style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isLulus ? Colors.blue.shade900 : Colors.red))),
+            child: _isLoading 
+              ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E40AF))) 
+              : _rekapMapel.isEmpty 
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.assignment_late_rounded, size: 60, color: Colors.grey.shade300),
+                        const SizedBox(height: 16),
+                        Text('Belum ada nilai yang diinputkan\npada periode $_selectedSmt $_selectedTa.', textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, height: 1.5)),
+                      ],
+                    ),
+                  ) 
+                : ListView.builder(
+                    padding: const EdgeInsets.all(20), 
+                    itemCount: _rekapMapel.length,
+                    itemBuilder: (context, index) {
+                      final n = _rekapMapel[index];
+                      final mapel = n['mapel'];
+                      final rataHarian = (n['rata_harian'] as double).toStringAsFixed(1);
+                      final praktek = (n['praktek'] as double).toStringAsFixed(1);
+                      final pts = (n['pts'] as double).toStringAsFixed(1);
+                      final pas = (n['pas'] as double).toStringAsFixed(1);
+                      final akhir = (n['akhir'] as double).toStringAsFixed(1);
+                      final mutu = n['mutu'];
+                      final warnaMutu = _getMutuColor(mutu);
+
+                      return Card(
+                        elevation: 0, margin: const EdgeInsets.only(bottom: 16), 
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade200)),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(child: Text(mapel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A)))),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), 
+                                    decoration: BoxDecoration(color: warnaMutu.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: warnaMutu.withOpacity(0.5))), 
+                                    child: Text('Predikat $mutu', style: TextStyle(fontWeight: FontWeight.bold, color: warnaMutu, fontSize: 11))
+                                  )
                                 ],
-                              );
-                            }).toList(),
+                              ),
+                              const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider(height: 1)),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  _buildKomponenNilai('Harian/Tugas', rataHarian),
+                                  _buildKomponenNilai('Praktek', praktek),
+                                  _buildKomponenNilai('PTS', pts),
+                                  _buildKomponenNilai('PAS', pas),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Container(
+                                width: double.infinity, padding: const EdgeInsets.all(16), 
+                                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blue.shade100)), 
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('NILAI AKHIR', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blue.shade900)),
+                                    Text(akhir, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: Colors.blue.shade900)),
+                                  ],
+                                )
+                              )
+                            ],
                           ),
                         ),
-                      ),
-          ),
+                      );
+                    },
+                  ),
+          )
         ],
-      ),
+      )
+    );
+  }
+
+  Widget _buildKomponenNilai(String label, String nilai) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)), 
+        const SizedBox(height: 4),
+        Text(nilai, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B))),
+      ],
     );
   }
 }

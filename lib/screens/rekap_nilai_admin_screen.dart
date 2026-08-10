@@ -24,9 +24,21 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
   List<Map<String, dynamic>> _listSiswa = [];
   String _searchQuery = ''; 
 
+  // 🔥 VARIABEL HISTORI SEMESTER & TAHUN AJARAN
+  String _selectedSmt = 'Ganjil';
+  String _selectedTa = '';
+  final List<String> _listTahunAjaran = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
+
   @override
   void initState() {
     super.initState();
+    
+    // Otomatis mendeteksi Tahun Ajaran dan Semester berjalan saat ini
+    DateTime now = DateTime.now();
+    int currentYear = now.month >= 7 ? now.year : now.year - 1;
+    _selectedTa = '$currentYear/${currentYear + 1}';
+    _selectedSmt = now.month >= 7 ? 'Ganjil' : 'Genap';
+
     _fetchDaftarKelas();
   }
 
@@ -37,20 +49,24 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
           .from('profiles')
           .select('kelas')
           .eq('role', 'siswa');
+          
       final Set<String> kelasSet = {};
       for (var item in res) {
-        if (item['kelas'] != null && item['kelas'].toString().isNotEmpty) {
-          kelasSet.add(item['kelas'].toString());
+        if (item['kelas'] != null && item['kelas'].toString().trim().isNotEmpty) {
+          kelasSet.add(item['kelas'].toString().trim());
         }
       }
 
       setState(() {
         _listKelas = kelasSet.toList()..sort();
         if (_listKelas.isNotEmpty) _selectedKelas = _listKelas.first;
-        _isLoading = false;
       });
 
-      if (_selectedKelas != null) _fetchSiswaByKelas(_selectedKelas!);
+      if (_selectedKelas != null) {
+        await _fetchSiswaByKelas(_selectedKelas!);
+      } else {
+        setState(() => _isLoading = false);
+      }
     } catch (e) {
       setState(() => _isLoading = false);
     }
@@ -61,10 +77,11 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
     try {
       final res = await _supabase
           .from('profiles')
-          .select('id, full_name, nisn, kelas')
+          .select('id, full_name, nisn, kelas, foto_profil')
           .eq('role', 'siswa')
           .eq('kelas', kelas)
           .order('full_name', ascending: true);
+          
       setState(() {
         _listSiswa = List<Map<String, dynamic>>.from(res);
         _isLoading = false;
@@ -74,14 +91,12 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
     }
   }
 
-  // 🔥 FORMAT EXCEL DIRAPIKAN SESUAI INSTRUKSI (Harian, Praktek, PTS, PAS, Akhir, Mutu)
+  // 🔥 EXCEL SEKARANG MENGGUNAKAN FILTER HISTORI
   Future<void> _exportExcelSatuKelas() async {
     if (_selectedKelas == null) return;
+    
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Menyiapkan file Excel...'),
-        backgroundColor: Colors.blue,
-      ),
+      const SnackBar(content: Text('Menyiapkan file Excel...'), backgroundColor: Colors.blue),
     );
 
     try {
@@ -90,24 +105,25 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
           .select('id, full_name, nisn')
           .eq('role', 'siswa')
           .eq('kelas', _selectedKelas!);
-      List<String> listIdSiswa = resSiswa
-          .map((e) => e['id'].toString())
-          .toList();
+          
+      List<String> listIdSiswa = resSiswa.map((e) => e['id'].toString()).toList();
 
       if (listIdSiswa.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Tidak ada siswa di kelas ini'),
-            backgroundColor: Colors.orange,
-          ),
+          const SnackBar(content: Text('Tidak ada siswa di kelas ini'), backgroundColor: Colors.orange),
         );
         return;
       }
 
+      // 🔥 FILTER DATA NILAI BERDASARKAN SEMESTER & TAHUN AJARAN YANG DIPILIH
+      String smtFilter = _selectedSmt == 'Ganjil' ? 'Semester 1 (Ganjil)' : 'Semester 2 (Genap)';
+      
       final resNilai = await _supabase
           .from('nilai')
           .select('*')
-          .filter('siswa_id', 'in', listIdSiswa);
+          .filter('siswa_id', 'in', listIdSiswa)
+          .eq('semester', smtFilter)
+          .eq('tahun_ajaran', _selectedTa);
 
       Map<String, Map<String, dynamic>> rekapData = {};
       for (var item in resNilai) {
@@ -152,19 +168,16 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
       Sheet sheetObject = excel['Rekap_Kelas_$_selectedKelas'];
       excel.setDefaultSheet('Rekap_Kelas_$_selectedKelas');
 
-      // Styling untuk header
       CellStyle headerStyle = CellStyle(
         bold: true,
         horizontalAlign: HorizontalAlign.Center,
         verticalAlign: VerticalAlign.Center,
       );
 
-      sheetObject.appendRow([
-        TextCellValue('REKAPITULASI NILAI KELAS $_selectedKelas')
-      ]);
+      sheetObject.appendRow([TextCellValue('REKAPITULASI NILAI KELAS $_selectedKelas')]);
+      sheetObject.appendRow([TextCellValue('PERIODE: $_selectedSmt - $_selectedTa')]);
       sheetObject.appendRow([TextCellValue('')]);
       
-      // Header Kolom
       var headerRow = [
         TextCellValue('Nama Siswa'),
         TextCellValue('NISN'),
@@ -178,9 +191,8 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
       ];
       sheetObject.appendRow(headerRow);
       
-      // Menerapkan styling ke row header (asumsi index row 2)
       for (int i = 0; i < headerRow.length; i++) {
-        var cell = sheetObject.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 2));
+        var cell = sheetObject.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 3));
         cell.cellStyle = headerStyle;
       }
 
@@ -194,7 +206,6 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
         double pts = n['pts'];
         double pas = n['pas'];
         
-        // Rumus sederhana (Bisa disesuaikan): 30% Harian, 20% Praktek, 20% PTS, 30% PAS
         double akhir = (rataHarian * 0.3) + (praktek * 0.2) + (pts * 0.2) + (pas * 0.3);
 
         String mutu = 'D';
@@ -216,21 +227,19 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
       });
 
       Directory dir = await getApplicationDocumentsDirectory();
-      String path = '${dir.path}/Rekap_Nilai_Kelas_$_selectedKelas.xlsx';
+      String namaSmt = _selectedSmt.toLowerCase();
+      String namaTa = _selectedTa.replaceAll('/', '-');
+      String path = '${dir.path}/Rekap_Nilai_${_selectedKelas}_${namaSmt}_$namaTa.xlsx';
+      
       File(path)
         ..createSync(recursive: true)
         ..writeAsBytesSync(excel.encode()!);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Berhasil dibuat! Membuka opsi bagikan...'),
-          backgroundColor: Colors.green,
-        ),
+        const SnackBar(content: Text('Berhasil dibuat! Membuka opsi bagikan...'), backgroundColor: Colors.green),
       );
 
-      await Share.shareXFiles([
-        XFile(path),
-      ], text: 'Ini adalah file Excel Rekap Nilai Kelas $_selectedKelas');
+      await Share.shareXFiles([XFile(path)], text: 'Ini adalah file Excel Rekap Nilai Kelas $_selectedKelas ($_selectedSmt $_selectedTa)');
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Gagal: $e'), backgroundColor: Colors.red),
@@ -272,36 +281,40 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
             color: Colors.white,
             child: Column(
               children: [
+                // 🔥 TAMBAHAN FILTER HISTORI
                 Row(
                   children: [
-                    const Icon(
-                      Icons.folder_shared_rounded,
-                      color: Color(0xFF1E40AF),
-                      size: 28,
+                    Expanded(
+                      flex: 1,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedSmt,
+                        decoration: InputDecoration(labelText: 'Semester', filled: true, fillColor: const Color(0xFFF1F5F9), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+                        items: ['Ganjil', 'Genap'].map((b) => DropdownMenuItem(value: b, child: Text(b, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)))).toList(),
+                        onChanged: (val) { if (val != null) setState(() => _selectedSmt = val); },
+                      ),
                     ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 1,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedTa,
+                        decoration: InputDecoration(labelText: 'Tahun Ajaran', filled: true, fillColor: const Color(0xFFF1F5F9), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+                        items: _listTahunAjaran.map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)))).toList(),
+                        onChanged: (val) { if (val != null) setState(() => _selectedTa = val); },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.folder_shared_rounded, color: Colors.indigo, size: 26)),
                     const SizedBox(width: 16),
                     Expanded(
                       child: DropdownButtonFormField<String>(
                         value: _selectedKelas,
-                        decoration: InputDecoration(
-                          labelText: 'Pilih Kelas',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: _listKelas
-                            .map(
-                              (k) => DropdownMenuItem(
-                                value: k,
-                                child: Text(
-                                  'Kelas $k',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            )
-                            .toList(),
+                        decoration: InputDecoration(labelText: 'Pilih Kelas', filled: true, fillColor: const Color(0xFFF1F5F9), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+                        items: _listKelas.map((k) => DropdownMenuItem(value: k, child: Text('Kelas $k', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)))).toList(),
                         onChanged: (val) {
                           if (val != null) {
                             setState(() => _selectedKelas = val);
@@ -312,40 +325,19 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Cari Nama / NISN Siswa...',
-                    prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                    filled: true,
-                    fillColor: const Color(0xFFF1F5F9),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                  ),
-                  onChanged: (v) =>
-                      setState(() => _searchQuery = v.trim().toLowerCase()),
+                  decoration: InputDecoration(hintText: 'Cari Nama / NISN Siswa...', prefixIcon: const Icon(Icons.search, color: Colors.grey), filled: true, fillColor: const Color(0xFFF1F5F9), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(vertical: 0)),
+                  onChanged: (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green.shade700,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    onPressed: _listSiswa.isEmpty
-                        ? null
-                        : _exportExcelSatuKelas,
-                    icon: const Icon(Icons.download_rounded),
-                    label: Text(
-                      'Download Excel (Seluruh Kelas $_selectedKelas)',
-                    ),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(vertical: 14)),
+                    onPressed: _listSiswa.isEmpty ? null : _exportExcelSatuKelas,
+                    icon: const Icon(Icons.download_rounded, size: 20),
+                    label: Text('Download Excel (Periode $_selectedSmt $_selectedTa)', style: const TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
@@ -355,55 +347,40 @@ class _RekapNilaiAdminScreenState extends State<RekapNilaiAdminScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : filteredSiswa.isEmpty
-                ? const Center(child: Text('Belum ada siswa di kelas ini.'))
+                ? const Center(child: Text('Belum ada siswa di kelas ini.', style: TextStyle(color: Colors.grey)))
                 : ListView.builder(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(20),
                     itemCount: filteredSiswa.length,
                     itemBuilder: (context, index) {
                       final siswa = filteredSiswa[index];
+                      String fotoProfil = siswa['foto_profil'] ?? '';
+                      
                       return Card(
-                        elevation: 0,
-                        margin: const EdgeInsets.only(bottom: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: Colors.grey.shade300),
-                        ),
+                        elevation: 0, margin: const EdgeInsets.only(bottom: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade200)),
                         child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          leading: CircleAvatar(
+                            radius: 22, backgroundColor: const Color(0xFFDBEAFE),
+                            backgroundImage: fotoProfil.isNotEmpty ? NetworkImage(fotoProfil) : null,
+                            child: fotoProfil.isEmpty ? const Icon(Icons.person, color: Color(0xFF1E40AF)) : null,
                           ),
-                          leading: const CircleAvatar(
-                            backgroundColor: Color(0xFFDBEAFE),
-                            child: Icon(
-                              Icons.analytics_rounded,
-                              color: Color(0xFF1E40AF),
-                            ),
-                          ),
-                          title: Text(
-                            siswa['full_name'],
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
+                          title: Text(siswa['full_name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                           subtitle: Text('NISN: ${siswa['nisn']}'),
                           trailing: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1E40AF),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E40AF), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                             onPressed: () => Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (context) => NilaiRaporScreen(
                                   siswaId: siswa['id'].toString(),
-                                  // 🔥 JIKA ANDA INGIN MENGIRIM DATA BIODATA SISWA KE RAPOR
-                                  // pastikan NilaiRaporScreen menerima parameter tersebut jika diperlukan.
+                                  // 🔥 Mengirim parameter ke e-Rapor
+                                  initialSemester: _selectedSmt, 
+                                  initialTahunAjaran: _selectedTa,
                                 ),
                               ),
                             ),
-                            child: const Text('Buka Rapor'),
+                            child: const Text('Buka Rapor', style: TextStyle(fontWeight: FontWeight.bold)),
                           ),
                         ),
                       );

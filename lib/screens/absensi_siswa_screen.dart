@@ -233,6 +233,7 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
       String hariIni = _getHariIni();
       if (hariIni == 'Sabtu' || hariIni == 'Minggu') hariIni = 'Senin';
 
+      // 1. Ambil Jadwal Master
       final jadwalRes = await _supabase
           .from('jadwal')
           .select('*')
@@ -240,9 +241,34 @@ class _AbsensiSiswaScreenState extends State<AbsensiSiswaScreen> {
           .ilike('hari', hariIni)
           .order('jam_mulai', ascending: true);
 
+      List<Map<String, dynamic>> jadwalMaster = List<Map<String, dynamic>>.from(jadwalRes as List);
+
+      // 🔥 2. AMBIL KAMUS GURU & JADWAL PENGGANTI (OVERRIDE INFAL)
+      final resGuru = await _supabase.from('profiles').select('id, full_name');
+      Map<String, String> mapGuru = {};
+      for (var g in resGuru) {
+        mapGuru[g['id'].toString()] = g['full_name'].toString();
+      }
+
+      final String tglHariIni = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final resPengganti = await _supabase.from('jadwal_pengganti').select('*').eq('tanggal', tglHariIni);
+      List<Map<String, dynamic>> listPengganti = List<Map<String, dynamic>>.from(resPengganti);
+
+      // 🔥 3. TERAPKAN OVERRIDE NAMA GURU SEBELUM DISIMPAN KE LOKAL
+      for (var j in jadwalMaster) {
+        try {
+          var pengganti = listPengganti.firstWhere((p) => p['jadwal_id'].toString() == j['id'].toString());
+          String namaPengganti = mapGuru[pengganti['guru_pengganti_id'].toString()] ?? 'Guru Pengganti';
+          String guruAsli = j['guru_pengampu'] ?? 'Guru Asli';
+          
+          // Timpa variabel 'guru_pengampu' langsung agar saat dikirim ke database nama guru penggantinya ikut
+          j['guru_pengampu'] = '$namaPengganti (Infal: $guruAsli)';
+        } catch (_) {}
+      }
+
       if (mounted) {
         setState(() {
-          _jadwalHariIni = List<Map<String, dynamic>>.from(jadwalRes as List);
+          _jadwalHariIni = jadwalMaster;
           _isLoading = false;
         });
       }

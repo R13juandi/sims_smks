@@ -1,7 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
-import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import '../services/face_recognition_service.dart';
@@ -23,6 +23,9 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
   // Variabel Wajah
   List<double>? _faceEmbeddingBaru;
   bool _isDaftarWajahLoading = false;
+
+  // 🔥 VARIABEL FOTO PROFIL (POIN 1)
+  XFile? _fotoProfilBaru;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -102,6 +105,18 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
         'KKA (Koding dan Kecerdasan AI)', 'Produk Kreatif dan Kewirausahaan', 'Muatan Lokal'
       ];
     });
+  }
+
+  // 🔥 FUNGSI MENGAMBIL FOTO PROFIL (GALERI/KAMERA)
+  Future<void> _pilihFotoProfil() async {
+    final picker = ImagePicker();
+    final foto = await picker.pickImage(
+      source: ImageSource.gallery, // Bisa diganti .camera jika butuh jepret langsung
+      imageQuality: 50,
+    );
+    if (foto != null) {
+      setState(() => _fotoProfilBaru = foto);
+    }
   }
 
   Future<void> _daftarkanWajah() async {
@@ -211,10 +226,9 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
   }
 
   // =========================================================================
-  // 🔥 REKAYASA SISTEM: WAJAH DIJADIKAN OPSIONAL (DEFERRED ENROLLMENT)
+  // 🔥 REKAYASA SISTEM: MENYIMPAN FOTO PROFIL LALU REGISTRASI USER
   // =========================================================================
   Future<void> _prosesRegistrasiUser() async {
-    // Validasi wajah dibebaskan agar tidak memblokir input massal oleh TU
     if (_selectedRole == 'siswa' && _faceEmbeddingBaru == null) {
       debugPrint('INFO: Akun siswa dibuat TANPA biometrik wajah (Deferred Enrollment).');
     }
@@ -234,6 +248,7 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // 1. Buat akun Auth Supabase terlebih dahulu (Untuk mendapatkan UID)
       final AuthResponse authRes = await _supabase.auth.signUp(
         email: _emailController.text.trim(), 
         password: _passwordController.text.trim()
@@ -241,6 +256,22 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
       final String? newUserId = authRes.user?.id;
 
       if (newUserId != null) {
+        
+        // 2. Upload Foto Profil jika ada
+        String urlFotoProfil = '';
+        if (_fotoProfilBaru != null) {
+          try {
+            final ekstensiFile = _fotoProfilBaru!.path.split('.').last;
+            final namaFileUnik = 'PROFIL_${newUserId}_${DateTime.now().millisecondsSinceEpoch}.$ekstensiFile';
+            
+            await _supabase.storage.from('foto_profil').upload(namaFileUnik, File(_fotoProfilBaru!.path));
+            urlFotoProfil = _supabase.storage.from('foto_profil').getPublicUrl(namaFileUnik);
+          } catch (e) {
+            debugPrint('Gagal upload foto profil, mengabaikan: $e');
+          }
+        }
+
+        // 3. Susun data Profile
         Map<String, dynamic> profileData = {
           'id': newUserId, 
           'full_name': _namaController.text.trim(), 
@@ -251,7 +282,7 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
           'alamat': _alamatController.text.trim(),
           'agama': _selectedAgama, 
           'jenis_kelamin': _selectedJK,
-          // Jika wajah kosong, simpan null ke database
+          'foto_profil': urlFotoProfil, // 🔥 POIN 1: SIMPAN LINK FOTO KE DB
           'face_baseline': _faceEmbeddingBaru != null 
               ? FaceRecognitionService.instance.encodeEmbedding(_faceEmbeddingBaru!) 
               : null,
@@ -274,6 +305,7 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
           });
         }
 
+        // 4. Masukkan ke Database
         await _supabase.from('profiles').insert(profileData);
         if (!mounted) return;
         
@@ -307,6 +339,36 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // 🔥 SEKSI UPLOAD FOTO PROFIL (UI BARU)
+                    Center(
+                      child: Column(
+                        children: [
+                          GestureDetector(
+                            onTap: _pilihFotoProfil,
+                            child: Stack(
+                              alignment: Alignment.bottomRight,
+                              children: [
+                                CircleAvatar(
+                                  radius: 50,
+                                  backgroundColor: Colors.blue.shade50,
+                                  backgroundImage: _fotoProfilBaru != null ? FileImage(File(_fotoProfilBaru!.path)) : null,
+                                  child: _fotoProfilBaru == null ? Icon(Icons.person, size: 50, color: Colors.blue.shade200) : null,
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(color: const Color(0xFF1E40AF), shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+                                  child: const Icon(Icons.camera_alt, color: Colors.white, size: 16),
+                                )
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text('Upload Foto Profil', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
                     const Text('PILIH PERAN AKUN / ROLE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B))),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
@@ -330,12 +392,12 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                       const SizedBox(height: 20), const Text('PENGATURAN TUGAS MENGAJAR MULTI-MAPEL', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E40AF))), const SizedBox(height: 10),
                       InkWell(
                         onTap: _showMultiSelectMapel,
-                        child: Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(12)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Expanded(child: Text(_selectedMapelGuru.isEmpty ? 'Pilih Mata Pelajaran (Klik Di Sini)' : 'Mapel Terpilih: ${_selectedMapelGuru.join(", ")}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold))), const Icon(Icons.book_rounded, color: Colors.blue)])),
+                        child: Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Expanded(child: Text(_selectedMapelGuru.isEmpty ? 'Pilih Mata Pelajaran (Klik Di Sini)' : 'Mapel Terpilih: ${_selectedMapelGuru.join(", ")}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold))), const Icon(Icons.book_rounded, color: Colors.blue)])),
                       ),
                       const SizedBox(height: 12),
                       InkWell(
                         onTap: _showMultiSelectKelas,
-                        child: Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(12)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Expanded(child: Text(_selectedKelasGuru.isEmpty ? 'Pilih Kelas Mengajar (Klik Di Sini)' : 'Kelas Terpilih: ${_selectedKelasGuru.join(", ")}', style: const TextStyle(fontWeight: FontWeight.bold))), const Icon(Icons.school_rounded, color: Colors.indigo)])),
+                        child: Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Expanded(child: Text(_selectedKelasGuru.isEmpty ? 'Pilih Kelas Mengajar (Klik Di Sini)' : 'Kelas Terpilih: ${_selectedKelasGuru.join(", ")}', style: const TextStyle(fontWeight: FontWeight.bold))), const Icon(Icons.school_rounded, color: Colors.indigo)])),
                       ),
                     ],
 
@@ -361,7 +423,6 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                             : Icon(_faceEmbeddingBaru != null ? Icons.check_circle : Icons.face_retouching_natural,
                                 color: _faceEmbeddingBaru != null ? Colors.green : Colors.blue),
-                        // 🔥 LABEL DIUBAH MENJADI OPSIONAL
                         label: Text(_faceEmbeddingBaru != null ? 'Wajah Terdaftar ✓' : 'Ambil Foto Wajah (Opsional)'),
                         style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
                       ),
@@ -392,7 +453,7 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500)), const SizedBox(height: 4),
-        TextFormField(controller: controller, keyboardType: type, obscureText: isPassword, maxLines: maxLines, decoration: InputDecoration(fillColor: Colors.white, filled: true, prefixIcon: Icon(icon, color: const Color(0xFF64748B), size: 20), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(vertical: 14)), validator: (val) => val == null || val.trim().isEmpty ? 'Wajib diisi' : null),
+        TextFormField(controller: controller, keyboardType: type, obscureText: isPassword, maxLines: maxLines, decoration: InputDecoration(fillColor: Colors.white, filled: true, prefixIcon: Icon(icon, color: const Color(0xFF64748B), size: 20), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)), contentPadding: const EdgeInsets.symmetric(vertical: 14)), validator: (val) => val == null || val.trim().isEmpty ? 'Wajib diisi' : null),
       ],
     );
   }
@@ -403,7 +464,7 @@ class _TambahUserScreenState extends State<TambahUserScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500)), const SizedBox(height: 4),
-        DropdownButtonFormField<String>(value: verifiedValue, decoration: InputDecoration(fillColor: Colors.white, filled: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))), items: items.map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(), onChanged: onChanged),
+        DropdownButtonFormField<String>(value: verifiedValue, decoration: InputDecoration(fillColor: Colors.white, filled: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300))), items: items.map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(), onChanged: onChanged),
       ],
     );
   }

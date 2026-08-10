@@ -6,7 +6,7 @@ import '../login_screen.dart';
 import 'rekap_absensi_guru_screen.dart';
 
 // =========================================================================
-// GURU DASHBOARD UTAMA
+// GURU DASHBOARD (LOGIKA INFAL TERBARU)
 // =========================================================================
 class GuruDashboard extends StatefulWidget {
   const GuruDashboard({super.key});
@@ -51,19 +51,23 @@ class _GuruDashboardState extends State<GuruDashboard> {
         });
       }
 
+      final myId = _biodataGuru['id'].toString();
       final namaGuru = _biodataGuru['full_name']?.toString().trim() ?? '';
+      
+      final String hariIni = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'][DateTime.now().weekday - 1];
+      final String tglHariIni = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-      // 🔥 FUZZY MATCHING: Tarik SEMUA jadwal, filter secara fleksibel per kata
+      // 1. Ambil Semua Jadwal Master Guru Ini (Fuzzy Matching)
       final semuaJadwalDb = await _supabase.from('jadwal').select('*');
       
       List<String> nameParts = namaGuru.toLowerCase()
-          .replaceAll(RegExp(r'[,.]'), '') // Hapus tanda baca
+          .replaceAll(RegExp(r'[,.]'), '')
           .split(' ')
-          .where((w) => w.length > 2 && w != 'spd' && w != 'skom' && w != 'mpd' && w != 'bpk' && w != 'ibu') // Abaikan gelar
+          .where((w) => w.length > 2 && w != 'spd' && w != 'skom' && w != 'mpd' && w != 'bpk' && w != 'ibu')
           .toList();
 
       List<Map<String, dynamic>> jadwalRes = [];
-      Set<String> namaGuruAlias = {namaGuru}; // Koleksi format nama guru dari DB
+      Set<String> namaGuruAlias = {namaGuru}; 
 
       for (var j in semuaJadwalDb) {
         String guruMapel = (j['guru_pengampu'] ?? '').toString();
@@ -82,10 +86,39 @@ class _GuruDashboardState extends State<GuruDashboard> {
         }
 
         if (isMatch) {
-          jadwalRes.add(j);
+          Map<String, dynamic> jMaster = Map.from(j);
+          jMaster['status_jadwal'] = 'Reguler';
+          jadwalRes.add(jMaster);
           namaGuruAlias.add(guruMapel);
         }
       }
+
+      // 🔥 2. AMBIL KELAS INFAL (Yang ditugaskan oleh Admin)
+      final resInfal = await _supabase.from('jadwal_pengganti').select('*, jadwal(*)').eq('guru_pengganti_id', myId);
+      
+      for (var infal in resInfal) {
+        if (infal['jadwal'] != null) {
+          Map<String, dynamic> jadwalInfal = Map.from(infal['jadwal']);
+          // Override Info Jadwal agar muncul sebagai milik Guru Pengganti ini
+          jadwalInfal['status_jadwal'] = 'INFAL';
+          jadwalInfal['keterangan_infal'] = infal['keterangan'];
+          // Ubah nama hari & semester sementara mengikuti data infal agar match dengan query hari ini
+          DateTime tglInfal = DateTime.parse(infal['tanggal']);
+          jadwalInfal['hari'] = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'][tglInfal.weekday - 1];
+          jadwalInfal['guru_pengampu_asli'] = jadwalInfal['guru_pengampu']; 
+          jadwalInfal['guru_pengampu'] = '$namaGuru (Infal: ${jadwalInfal['guru_pengampu']})';
+          
+          jadwalRes.add(jadwalInfal);
+          namaGuruAlias.add(jadwalInfal['guru_pengampu']);
+        }
+      }
+
+      // 🔥 3. BUANG JADWAL MASTER JIKA HARI INI DIA DIGANTIKAN ORANG LAIN
+      final jadwalSayaDigantikan = await _supabase.from('jadwal_pengganti').select('jadwal_id').eq('tanggal', tglHariIni);
+      List<String> listIdDiganti = jadwalSayaDigantikan.map((e) => e['jadwal_id'].toString()).toList();
+      
+      jadwalRes.removeWhere((j) => j['status_jadwal'] == 'Reguler' && j['hari'] == hariIni && listIdDiganti.contains(j['id'].toString()));
+
 
       Set<String> kelasUnik = {};
       for (var j in jadwalRes) {
@@ -104,7 +137,7 @@ class _GuruDashboardState extends State<GuruDashboard> {
         });
       }
       
-      // 🔥 ABSENSI PENDING: Filter kuat dengan membandingkan semua format nama
+      // ABSENSI PENDING
       final tanggalSekarang = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final pendingRes = await _supabase
           .from('absensi')
@@ -541,25 +574,37 @@ class _JadwalMengajarGuruScreenState extends State<JadwalMengajarGuruScreen> {
                                       final ruang = (j['ruang_kelas'] ?? 'Lt. 2 - R. 05').toString();
                                       final jamMulai = (j['jam_mulai'] ?? '00:00').toString();
                                       final jamSelesai = (j['jam_selesai'] ?? '00:00').toString();
+                                      
+                                      // Cek Status Infal
+                                      bool isInfal = j['status_jadwal'] == 'INFAL';
 
                                       return Container(
                                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                                         padding: const EdgeInsets.all(12),
                                         decoration: BoxDecoration(
-                                          color: Colors.white,
+                                          color: isInfal ? Colors.teal.shade50 : Colors.white,
                                           borderRadius: BorderRadius.circular(10),
-                                          border: Border.all(color: Colors.grey.shade300),
+                                          border: Border.all(color: isInfal ? Colors.teal.shade300 : Colors.grey.shade300),
                                         ),
                                         child: Row(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            const Icon(Icons.play_arrow_rounded, color: Colors.green, size: 22),
+                                            Icon(isInfal ? Icons.swap_horiz_rounded : Icons.play_arrow_rounded, color: isInfal ? Colors.teal.shade700 : Colors.green, size: 22),
                                             const SizedBox(width: 10),
                                             Expanded(
                                               child: Column(
                                                 crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
-                                                  Text(mapel, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                                  Row(
+                                                    children: [
+                                                      Expanded(child: Text(mapel, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: isInfal ? Colors.teal.shade900 : const Color(0xFF0F172A)))),
+                                                      if (isInfal)
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.teal.shade700, borderRadius: BorderRadius.circular(4)),
+                                                          child: const Text('INFAL', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1)),
+                                                        )
+                                                    ],
+                                                  ),
                                                   const SizedBox(height: 4),
                                                   Row(
                                                     children: [
@@ -568,6 +613,10 @@ class _JadwalMengajarGuruScreenState extends State<JadwalMengajarGuruScreen> {
                                                       Text('Ruang: $ruang', style: TextStyle(fontSize: 12, color: Colors.teal.shade800, fontWeight: FontWeight.bold)),
                                                     ],
                                                   ),
+                                                  if (isInfal) ...[
+                                                    const SizedBox(height: 4),
+                                                    Text('Menggantikan: ${j['guru_pengampu_asli']}', style: TextStyle(fontSize: 11, color: Colors.red.shade700, fontStyle: FontStyle.italic)),
+                                                  ],
                                                   const SizedBox(height: 4),
                                                   Text('⏰ Pukul: $jamMulai - $jamSelesai WIB', style: TextStyle(fontSize: 11, color: Colors.blue.shade700, fontWeight: FontWeight.w600)),
                                                 ],
@@ -591,6 +640,11 @@ class _JadwalMengajarGuruScreenState extends State<JadwalMengajarGuruScreen> {
     );
   }
 }
+
+// =========================================================================
+// SISA CLASS LAINNYA DI BAWAH INI (InputNilaiGuruScreen, dll) TETAP SAMA
+// SEPERTI FILE ASLI ANDA, JADI TIDAK PERLU DIUBAH
+// =========================================================================
 
 // =========================================================================
 // INPUT NILAI GURU BATCH
